@@ -1,21 +1,24 @@
 package cron
 
 import (
-	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 )
+
+type Job interface {
+	Run()
+}
 
 type Executor interface {
 	Push(name string) // can not block
 }
 
 type chanExecutor struct {
-	jobs   map[string]cron.Job
+	jobs   map[string]Job
 	events chan string
 	logger *logrus.Logger
 }
 
-func NewChanExecutor(jobs map[string]cron.Job) *chanExecutor {
+func NewChanExecutor(jobs map[string]Job) *chanExecutor {
 	e := &chanExecutor{
 		jobs:   jobs,
 		events: make(chan string),
