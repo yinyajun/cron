@@ -86,7 +86,8 @@ func main() {
 
 	c.Add("@every 5s", "t1")
 	c.Activate("t1")
+	c.Add("@every 3s", "t2")
+	c.Activate("t2")
 
 	select {}
-
 }
