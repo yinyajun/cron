@@ -12,8 +12,11 @@ import (
 var _ memberlist.Delegate = (*gossipEntries)(nil)
 
 type Entries interface {
+	// Backup stores an entry's update operation to remote
 	Backup(Update) error
+	// Restore restores entries by name
 	Restore([]string) error
+	// Broadcast broadcasts an entry's update operation to peers
 	Broadcast(Update)
 
 	Add(*Entry)

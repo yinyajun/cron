@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/yinyajun/cron"
+	"os"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
@@ -57,12 +59,14 @@ func (t task) Run() { fmt.Println("run", t.name) }
 func main() {
 	flag.Parse()
 
-	//logrus.New()
-	//logger := &logrus.Logger{
-	//	Out:       os.Stdout,
-	//	Formatter: &MyFormatter{},
-	//	Level:     logrus.TraceLevel,
-	//}
+	formatter := new(logrus.TextFormatter)
+	formatter.TimestampFormat = time.RFC3339
+	formatter.FullTimestamp = true
+	logger := &logrus.Logger{
+		Out:       os.Stdout,
+		Formatter: formatter,
+		Level:     logrus.TraceLevel,
+	}
 
 	cli := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
 	store := cron.NewRedisKV(cli, "_cron")
@@ -82,7 +86,7 @@ func main() {
 	entries := cron.NewGossipEntries(store, cfg,
 		[]string{"127.0.0.1:8001", "127.0.0.1:8002"})
 
-	c := cron.New(timeline, executor, entries)
+	c := cron.New(timeline, executor, entries, cron.WithLogger(logger))
 
 	c.Add("@every 5s", "t1")
 	c.Activate("t1")
