@@ -24,30 +24,30 @@ func (e Entry) String() string {
 type Cron struct {
 	entries  Entries
 	timeline Timeline
-	executor Executor
+	logger   *logrus.Logger
 
 	add    chan Update
 	remove chan Update
 
-	logger *logrus.Logger
+	result chan<- string
 }
 
-func New(timeline Timeline, executor Executor, entries Entries, options ...Option) *Cron {
+func NewCron(
+	timeline Timeline,
+	entries Entries,
+	logger *logrus.Logger,
+	result chan<- string,
+) *Cron {
 	c := &Cron{
-		executor: executor,
 		entries:  entries,
 		timeline: timeline,
 		add:      make(chan Update),
 		remove:   make(chan Update),
-
-		logger: logrus.New(),
+		result:   result,
+		logger:   logger,
 	}
 
-	for _, opt := range options {
-		opt(c)
-	}
-
-	if c.entries == nil || c.timeline == nil || c.executor == nil {
+	if c.entries == nil || c.timeline == nil {
 		c.logger.Fatalln("cron init failed")
 	}
 
@@ -57,14 +57,6 @@ func New(timeline Timeline, executor Executor, entries Entries, options ...Optio
 
 	go c.run()
 	return c
-}
-
-type Option func(*Cron)
-
-func WithLogger(logger *logrus.Logger) Option {
-	return func(cron *Cron) {
-		cron.logger = logger
-	}
 }
 
 func (c *Cron) Add(spec string, name string) error {
@@ -209,7 +201,7 @@ func (c *Cron) handleExpired(now time.Time) error {
 			continue
 		}
 		if tryOK {
-			c.executor.Push(event.Name)
+			c.result <- event.Name
 			c.logger.Info("dispense: ", entry)
 		}
 	}
