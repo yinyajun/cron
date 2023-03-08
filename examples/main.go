@@ -48,7 +48,7 @@ func main() {
 	go func() {
 		for name := range result {
 			go func(name string) {
-				fmt.Println(" cron.jpgrun task", name)
+				fmt.Println("run task", name)
 			}(name)
 		}
 	}()
