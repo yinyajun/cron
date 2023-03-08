@@ -24,12 +24,12 @@ func (e Entry) String() string {
 type Cron struct {
 	entries  Entries
 	timeline Timeline
-	logger   *logrus.Logger
 
 	add    chan Update
 	remove chan Update
-
 	result chan<- string
+
+	logger *logrus.Logger
 }
 
 func NewCron(
@@ -52,7 +52,7 @@ func NewCron(
 	}
 
 	if err := c.restore(); err != nil {
-		c.logger.Error("restore: ", err)
+		c.logger.Error("restore failed: ", err)
 	}
 
 	go c.run()
@@ -78,7 +78,7 @@ func (c *Cron) Add(spec string, name string) error {
 	}
 
 	update := Update{
-		Action: add,
+		Action: addAction,
 		Entry:  entry,
 	}
 
@@ -102,7 +102,7 @@ func (c *Cron) Remove(name string) error {
 	}
 
 	update := Update{
-		Action: remove,
+		Action: removeAction,
 		Entry:  &Entry{Name: name},
 	}
 
@@ -150,13 +150,13 @@ func (c *Cron) run() {
 			select {
 			case now = <-timer.C:
 				if err := c.handleExpired(now); err != nil {
-					c.logger.Error("handleExpired failed: ", err.Error())
+					c.logger.Error("handle expired tasks failed: ", err.Error())
 				}
 
 			case u := <-c.add:
 				timer.Stop()
 
-				if u.Action != add {
+				if u.Action != addAction {
 					return
 				}
 				c.entries.Add(u.Entry)
@@ -165,7 +165,7 @@ func (c *Cron) run() {
 
 			case u := <-c.remove:
 				timer.Stop()
-				if u.Action != remove {
+				if u.Action != removeAction {
 					return
 				}
 				c.entries.Remove(u.Entry.Name)
@@ -197,7 +197,7 @@ func (c *Cron) handleExpired(now time.Time) error {
 
 		tryOK, err := c.timeline.TryModify(event, next)
 		if err != nil {
-			c.logger.Error("dispense: ", err.Error())
+			c.logger.Error("dispense failed: ", err.Error())
 			continue
 		}
 		if tryOK {

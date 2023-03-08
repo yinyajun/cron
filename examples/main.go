@@ -16,6 +16,7 @@ import (
 var (
 	logger *logrus.Logger
 	nodes  = flag.String("nodes", "", "nodes")
+	port   = flag.Int("port", 0, "port")
 )
 
 func init() {
@@ -32,16 +33,22 @@ func init() {
 func main() {
 	flag.Parse()
 
+	config := memberlist.DefaultLANConfig()
+	config.Name = fmt.Sprintf("node_%d", port)
+	config.BindPort = *port
+	config.AdvertisePort = *port
+
 	cli := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
 	store := cron.NewRedisKV(cli, "_cron")
 	timeline := cron.NewRedisTimeline("_cron", cli)
-	entries := cron.NewGossipEntries(store, memberlist.DefaultLANConfig(), strings.Split(*nodes, ","))
+	entries := cron.NewGossipEntries(store, config, strings.Split(*nodes, ","))
 
+	// consume result chan
 	result := make(chan string)
 	go func() {
 		for name := range result {
 			go func(name string) {
-				fmt.Println("run task", name)
+				fmt.Println(" cron.jpgrun task", name)
 			}(name)
 		}
 	}()

@@ -1,10 +1,12 @@
 package cron
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sync"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
 	"github.com/sirupsen/logrus"
 )
@@ -60,8 +62,7 @@ func NewGossipEntries(
 
 	entries.list = list
 	entries.q = &memberlist.TransmitLimitedQueue{
-		NumNodes:       func() int { return list.NumMembers() },
-		RetransmitMult: 1,
+		NumNodes: func() int { return list.NumMembers() },
 	}
 
 	return entries
@@ -99,6 +100,8 @@ func (s *gossipEntries) MergeRemoteState(buf []byte, join bool) {
 
 		if !e.Deleted && r.Deleted {
 			s.Remove(name)
+			s.logger.Debug("delete by push/pull: ", r)
+			continue
 		}
 	}
 }
@@ -118,11 +121,11 @@ func (s *gossipEntries) NotifyMsg(b []byte) {
 	}
 
 	switch update.Action {
-	case add:
+	case addAction:
 		s.Add(update.Entry)
 		s.logger.Debug("add by gossip: ", update.Entry)
 
-	case remove:
+	case removeAction:
 		s.Remove(update.Entry.Name)
 		s.logger.Debug("remove by gossip: ", update.Entry.Name)
 	}
@@ -132,6 +135,7 @@ func (s *gossipEntries) NotifyMsg(b []byte) {
 func (s *gossipEntries) Add(entry *Entry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if entry.schedule == nil {
 		entry.schedule, _ = parseSchedule(entry.Spec)
 	}
@@ -147,6 +151,7 @@ func (s *gossipEntries) Remove(name string) {
 	if !ok {
 		return
 	}
+
 	entry.Deleted = true
 }
 
@@ -199,14 +204,14 @@ func (s *gossipEntries) Restore(names []string) error {
 
 func (s *gossipEntries) Backup(u Update) error {
 	switch u.Action {
-	case add:
+	case addAction:
 		ser, err := json.Marshal(u.Entry)
 		if err != nil {
 			return err
 		}
 		return s.store.Write(u.Entry.Name, ser)
 
-	case remove:
+	case removeAction:
 		return s.store.Delete(u.Entry.Name)
 	}
 	return nil
@@ -215,9 +220,9 @@ func (s *gossipEntries) Backup(u Update) error {
 type Action int
 
 const (
-	invalid Action = iota
-	add
-	remove
+	unkAction Action = iota
+	addAction
+	removeAction
 )
 
 type Update struct {
@@ -232,3 +237,41 @@ type broadcast struct {
 func (b *broadcast) Invalidates(other memberlist.Broadcast) bool { return false }
 func (b *broadcast) Message() []byte                             { return b.msg }
 func (b *broadcast) Finished()                                   {}
+
+type KVStore interface {
+	Write(name string, content []byte) error
+	Read(name string) ([]byte, error)
+	Delete(name string) error
+}
+
+type redisKV struct {
+	cli       *redis.Client
+	keyPrefix string
+}
+
+func NewRedisKV(cli *redis.Client, prefix string) KVStore {
+	return redisKV{
+		cli:       cli,
+		keyPrefix: prefix,
+	}
+}
+
+func (r redisKV) Write(key string, value []byte) error {
+	return r.cli.Set(context.Background(), r._key(key), value, 0).Err()
+}
+
+func (r redisKV) Read(key string) ([]byte, error) {
+	res, err := r.cli.Get(context.Background(), r._key(key)).Result()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(res), nil
+}
+
+func (r redisKV) Delete(key string) error {
+	return r.cli.Del(context.Background(), r._key(key)).Err()
+}
+
+func (r redisKV) _key(name string) string {
+	return r.keyPrefix + "_" + name
+}
