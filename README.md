@@ -2,7 +2,7 @@
 cron is a simple cron go library
 
 ## diagram
-<img src="./doc/cron.jpg" alt="diagram" style="zoom: 50%;" />
+<img src="./doc/cron.png" alt="diagram" style="zoom: 50%;" />
 
 ## usage
 
