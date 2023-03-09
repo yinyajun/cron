@@ -2,6 +2,7 @@ package cron
 
 import (
 	"errors"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
 	"github.com/sirupsen/logrus"
@@ -32,7 +33,7 @@ func NewAgent(cli *redis.Client,
 	}
 }
 
-func (a *Agent) Run() {
+func (a *Agent) Start() {
 	go a.executor.consume()
 	go a.cron.run()
 }

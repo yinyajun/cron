@@ -5,7 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/yinyajun/cron/admin"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -53,14 +55,10 @@ func main() {
 	agent.AddJob(job{a: "t2"})
 	agent.AddJob(job{a: "t3"})
 
-	agent.Run()
+	agent.Start()
 
-	agent.Add("@every 5s", "t1")
-	agent.Active("t1")
-	agent.Add("@every 8s", "t2")
-	agent.Active("t2")
-
-	select {}
+	h := admin.NewHandler(agent)
+	http.ListenAndServe(":8081", h)
 }
 
 type job struct{ a string }
