@@ -7,22 +7,30 @@ cron is a simple cron go library
 ## usage
 
 ```golang
+config := memberlist.DefaultLANConfig()
+config.Name = fmt.Sprintf("node_%d", port)
+config.BindPort = *port
+config.AdvertisePort = *port
+
 cli := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
-store := cron.NewRedisKV(cli, "_cron")
-timeline := cron.NewRedisTimeline("_cron", cli)
-entries := cron.NewGossipEntries(store, config, strings.Split(*nodes, ","))
 
-// consume result chan
-result := make(chan string)
-go func() {
-    for name := range result {
-        go func(name string) {
-            fmt.Println(" cron.jpgrun task", name)
-        }(name)
-    }
-}()
+agent := cron.NewAgent(
+    cli,
+    strings.Split(*nodes, ","),
+    config,
+    logger,
+)
 
-c := cron.NewCron(timeline, entries, logger, result)
+agent.AddJob(job{a: "t1"})
+agent.AddJob(job{a: "t2"})
+agent.AddJob(job{a: "t3"})
+
+agent.Run()
+
+agent.Add("@every 5s", "t1")
+agent.Active("t1")
+agent.Add("@every 8s", "t2")
+agent.Active("t2")
 ```
 
 `go run examples/main.go --port=8001 --nodes='127.0.0.1:8001,127.0.0.1:8002'`
