@@ -124,15 +124,15 @@ type Handler struct {
 func NewHandler(agent *cron.Agent) *Handler {
 	h := &Handler{mux: http.NewServeMux()}
 
-	h.mux.Handle("/add", newAddHandlerFunc(agent))
-	h.mux.Handle("/active", newActiveHandlerFunc(agent))
-	h.mux.Handle("/pause", newPauseHandlerFunc(agent))
-	h.mux.Handle("/remove", newRemoveHandlerFunc(agent))
-	h.mux.Handle("/execute", newExecuteOnceHandlerFunc(agent))
-	h.mux.Handle("/running", newRunningHandlerFunc(agent))
-	h.mux.Handle("/schedule", newScheduleHandlerFunc(agent))
-	h.mux.Handle("/history", newHistoryHandlerFunc(agent))
-	h.mux.Handle("/jobs", newJobsHandlerFunc(agent))
+	h.mux.Handle("api/v1/add", newAddHandlerFunc(agent))
+	h.mux.Handle("api/v1/active", newActiveHandlerFunc(agent))
+	h.mux.Handle("api/v1/pause", newPauseHandlerFunc(agent))
+	h.mux.Handle("api/v1/remove", newRemoveHandlerFunc(agent))
+	h.mux.Handle("api/v1/execute", newExecuteOnceHandlerFunc(agent))
+	h.mux.Handle("api/v1/running", newRunningHandlerFunc(agent))
+	h.mux.Handle("api/v1/schedule", newScheduleHandlerFunc(agent))
+	h.mux.Handle("api/v1/history", newHistoryHandlerFunc(agent))
+	h.mux.Handle("api/v1/jobs", newJobsHandlerFunc(agent))
 
 	return h
 }

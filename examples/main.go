@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -37,16 +38,13 @@ func init() {
 func main() {
 	flag.Parse()
 
+	cli := redis.NewClient(&redis.Options{})
 	config := memberlist.DefaultLANConfig()
-	config.Name = fmt.Sprintf("node_%d", port)
-	config.BindPort = *port
-	config.AdvertisePort = *port
-
-	cli := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+	nodes := strings.Split(*nodes, ",")
 
 	agent := cron.NewAgent(
 		cli,
-		strings.Split(*nodes, ","),
+		nodes,
 		config,
 		logger,
 	)
@@ -57,8 +55,7 @@ func main() {
 
 	agent.Start()
 
-	h := admin.NewHandler(agent)
-	http.ListenAndServe(":8081", h)
+	log.Fatalln(http.ListenAndServe(":8081", admin.NewHandler(agent)))
 }
 
 type job struct{ a string }
