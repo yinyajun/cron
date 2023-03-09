@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -29,7 +32,6 @@ func init() {
 		Level:     logrus.TraceLevel,
 	}
 }
-
 func main() {
 	flag.Parse()
 
@@ -39,26 +41,39 @@ func main() {
 	config.AdvertisePort = *port
 
 	cli := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
-	store := cron.NewRedisKV(cli, "_cron")
-	timeline := cron.NewRedisTimeline("_cron", cli)
-	entries := cron.NewGossipEntries(store, config, strings.Split(*nodes, ","))
 
-	// consume result chan
-	result := make(chan string)
-	go func() {
-		for name := range result {
-			go func(name string) {
-				fmt.Println("run task", name)
-			}(name)
-		}
-	}()
+	agent := cron.NewAgent(
+		cli,
+		strings.Split(*nodes, ","),
+		config,
+		logger,
+	)
 
-	c := cron.NewCron(timeline, entries, logger, result)
+	agent.AddJob(job{a: "t1"})
+	agent.AddJob(job{a: "t2"})
+	agent.AddJob(job{a: "t3"})
 
-	c.Add("@every 5s", "t1")
-	c.Activate("t1")
-	c.Add("@every 3s", "t2")
-	c.Activate("t2")
+	agent.Run()
+
+	agent.Add("@every 5s", "t1")
+	agent.Active("t1")
+	agent.Add("@every 8s", "t2")
+	agent.Active("t2")
 
 	select {}
+}
+
+type job struct{ a string }
+
+func (j job) Name() string {
+	return j.a
+}
+
+func (j job) Run(ctx context.Context) (string, error) {
+	fmt.Println("run", j.Name())
+	time.Sleep(10 * time.Second)
+	if rand.Intn(10) > 5 {
+		return "", errors.New(j.a)
+	}
+	return j.a, nil
 }

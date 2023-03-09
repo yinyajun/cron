@@ -6,6 +6,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
+	"github.com/yinyajun/cron/store"
 )
 
 type Entry struct {
@@ -23,17 +24,18 @@ func (e Entry) String() string {
 
 type Cron struct {
 	entries  Entries
-	timeline Timeline
+	timeline store.Timeline
 
-	add    chan Update
-	remove chan Update
-	result chan<- string
+	add     chan Update
+	remove  chan Update
+	trigger chan string
+	result  chan<- string
 
 	logger *logrus.Logger
 }
 
 func NewCron(
-	timeline Timeline,
+	timeline store.Timeline,
 	entries Entries,
 	logger *logrus.Logger,
 	result chan<- string,
@@ -55,7 +57,6 @@ func NewCron(
 		c.logger.Error("restore failed: ", err)
 	}
 
-	go c.run()
 	return c
 }
 
@@ -65,7 +66,7 @@ func (c *Cron) Add(spec string, name string) error {
 		return err
 	}
 
-	event := Event{
+	event := store.Event{
 		Name:   name,
 		Time:   time.Now(),
 		Hidden: true,
@@ -116,6 +117,25 @@ func (c *Cron) Remove(name string) error {
 func (c *Cron) Pause(name string) error    { return c.timeline.Hide(name) }
 func (c *Cron) Activate(name string) error { return c.timeline.Display(name) }
 
+func (c *Cron) Do(name string) error {
+	event := store.Event{
+		Name:   name,
+		Time:   time.Now(),
+		Hidden: true,
+	}
+
+	if err := c.timeline.Add(event); err != nil {
+		return err
+	}
+
+	c.trigger <- name
+	return nil
+}
+
+func (c *Cron) Events() ([]store.Event, error) {
+	return c.timeline.Events()
+}
+
 func (c *Cron) restore() error {
 	events, err := c.timeline.Events()
 	if err != nil {
@@ -165,12 +185,18 @@ func (c *Cron) run() {
 
 			case u := <-c.remove:
 				timer.Stop()
+
 				if u.Action != removeAction {
 					return
 				}
 				c.entries.Remove(u.Entry.Name)
 				c.entries.Broadcast(u)
 				c.logger.Debug("remove: ", u.Entry.Name)
+
+			case name := <-c.trigger:
+				timer.Stop()
+
+				c.logger.Debug("trigger: ", name)
 			}
 			break
 		}

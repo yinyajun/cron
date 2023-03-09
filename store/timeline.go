@@ -1,4 +1,4 @@
-package cron
+package store
 
 import (
 	"context"
@@ -45,10 +45,10 @@ type redisTimeline struct {
 	cli *redis.Client
 }
 
-func NewRedisTimeline(key string, cli *redis.Client) Timeline {
+func NewRedisTimeline(cli *redis.Client) Timeline {
 	return &redisTimeline{
 		cli: cli,
-		key: key,
+		key: "timeline",
 	}
 }
 

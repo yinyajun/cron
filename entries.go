@@ -1,14 +1,13 @@
 package cron
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"sync"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
 	"github.com/sirupsen/logrus"
+	"github.com/yinyajun/cron/store"
 )
 
 var _ memberlist.Delegate = (*gossipEntries)(nil)
@@ -30,22 +29,24 @@ type Entries interface {
 type gossipEntries struct {
 	mu sync.RWMutex
 
-	store  KVStore
+	prefix string
+	kv     store.KV
 	local  map[string]*Entry
-	logger *logrus.Logger
 	list   *memberlist.Memberlist
 	q      *memberlist.TransmitLimitedQueue
+	logger *logrus.Logger
 }
 
 func NewGossipEntries(
-	store KVStore,
+	kv store.KV,
 	config *memberlist.Config,
 	existing []string,
 ) Entries {
 
 	entries := &gossipEntries{
+		prefix: "_entries",
 		local:  make(map[string]*Entry),
-		store:  store,
+		kv:     kv,
 		logger: logrus.New(),
 	}
 
@@ -187,7 +188,7 @@ func (s *gossipEntries) Broadcast(u Update) {
 func (s *gossipEntries) Restore(names []string) error {
 	for _, name := range names {
 		e := &Entry{}
-		ser, err := s.store.Read(name)
+		ser, err := s.kv.Get(s.backupKey(name))
 		if err != nil {
 			return err
 		}
@@ -209,12 +210,16 @@ func (s *gossipEntries) Backup(u Update) error {
 		if err != nil {
 			return err
 		}
-		return s.store.Write(u.Entry.Name, ser)
+		return s.kv.Set(s.backupKey(u.Entry.Name), ser)
 
 	case removeAction:
-		return s.store.Delete(u.Entry.Name)
+		return s.kv.Delete(s.backupKey(u.Entry.Name))
 	}
 	return nil
+}
+
+func (s *gossipEntries) backupKey(key string) string {
+	return s.prefix + "_" + key
 }
 
 type Action int
@@ -237,41 +242,3 @@ type broadcast struct {
 func (b *broadcast) Invalidates(other memberlist.Broadcast) bool { return false }
 func (b *broadcast) Message() []byte                             { return b.msg }
 func (b *broadcast) Finished()                                   {}
-
-type KVStore interface {
-	Write(name string, content []byte) error
-	Read(name string) ([]byte, error)
-	Delete(name string) error
-}
-
-type redisKV struct {
-	cli       *redis.Client
-	keyPrefix string
-}
-
-func NewRedisKV(cli *redis.Client, prefix string) KVStore {
-	return redisKV{
-		cli:       cli,
-		keyPrefix: prefix,
-	}
-}
-
-func (r redisKV) Write(key string, value []byte) error {
-	return r.cli.Set(context.Background(), r._key(key), value, 0).Err()
-}
-
-func (r redisKV) Read(key string) ([]byte, error) {
-	res, err := r.cli.Get(context.Background(), r._key(key)).Result()
-	if err != nil {
-		return nil, err
-	}
-	return []byte(res), nil
-}
-
-func (r redisKV) Delete(key string) error {
-	return r.cli.Del(context.Background(), r._key(key)).Err()
-}
-
-func (r redisKV) _key(name string) string {
-	return r.keyPrefix + "_" + name
-}
