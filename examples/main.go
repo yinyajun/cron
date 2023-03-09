@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/yinyajun/cron/admin"
 	"math/rand"
 	"net/http"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/sirupsen/logrus"
 	"github.com/yinyajun/cron"
+	"github.com/yinyajun/cron/admin"
 )
 
 var (
