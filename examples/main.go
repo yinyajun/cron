@@ -21,8 +21,10 @@ import (
 
 var (
 	logger *logrus.Logger
-	nodes  = flag.String("nodes", "", "nodes")
-	port   = flag.Int("port", 0, "port")
+
+	nodes    = flag.String("nodes", "", "nodes")
+	addr     = flag.String("addr", "", "redis_addr")
+	password = flag.String("password", "", "redis_password")
 )
 
 func init() {
@@ -38,7 +40,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	cli := redis.NewClient(&redis.Options{})
+	cli := redis.NewClient(&redis.Options{Addr: *addr, Password: *password})
 	config := memberlist.DefaultLANConfig()
 	nodes := strings.Split(*nodes, ",")
 
@@ -52,6 +54,7 @@ func main() {
 	agent.AddJob(job{a: "t1"})
 	agent.AddJob(job{a: "t2"})
 	agent.AddJob(job{a: "t3"})
+	agent.AddJob(job{a: "t4"})
 
 	agent.Start()
 
