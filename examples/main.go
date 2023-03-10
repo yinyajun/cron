@@ -57,7 +57,6 @@ func main() {
 	agent.AddJob(job{a: "t4"})
 
 	agent.Start()
-
 	log.Fatalln(http.ListenAndServe(":8081", admin.NewHandler(agent)))
 }
 
