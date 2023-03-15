@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 
 	"github.com/go-redis/redis/v8"
@@ -9,7 +10,17 @@ import (
 	"github.com/yinyajun/cron/store"
 )
 
-var ErrJobNotExist = errors.New("corresponding job not exist")
+var (
+	ErrJobNotSupport = errors.New("unsupported job")
+	ErrJobNameEmpty  = errors.New("job name can not be empty")
+)
+
+type EntryRecord struct {
+	Name      string `json:"name"`
+	Spec      string `json:"spec"`
+	Next      string `json:"next"`
+	Displayed bool   `json:"displayed"`
+}
 
 type Agent struct {
 	cron     *Cron
@@ -25,7 +36,7 @@ func NewAgent(cli *redis.Client,
 	timeline := store.NewRedisTimeline(cli)
 	entries := NewGossipEntries(kv, conf, existing)
 	executor := NewExecutor(cli)
-	cron := NewCron(timeline, entries, logger, executor.Trigger())
+	cron := NewCron(entries, timeline, logger, executor.Receiver())
 
 	return &Agent{
 		cron:     cron,
@@ -38,40 +49,74 @@ func (a *Agent) Start() {
 	go a.cron.run()
 }
 
-func (a *Agent) AddJob(job Job) {
+func (a *Agent) RegisterJob(job Job) error {
+	if job.Name() == "" {
+		return ErrJobNameEmpty
+	}
 	a.executor.Add(job)
+	return nil
 }
 
 func (a *Agent) Add(spec, jobName string) error {
-	if !a.executor.Contain(jobName) {
-		return ErrJobNotExist
+	if err := a.validate(jobName); err != nil {
+		return err
 	}
 
 	return a.cron.Add(spec, jobName)
 }
 
 func (a *Agent) Active(jobName string) error {
-	if !a.executor.Contain(jobName) {
-		return ErrJobNotExist
+	if err := a.validate(jobName); err != nil {
+		return err
 	}
 
 	return a.cron.Activate(jobName)
 }
 
 func (a *Agent) Pause(jobName string) error {
+	if err := a.validate(jobName); err != nil {
+		return err
+	}
+
 	return a.cron.Pause(jobName)
 }
 
 func (a *Agent) Remove(jobName string) error {
+	if err := a.validate(jobName); err != nil {
+		return err
+	}
+
 	return a.cron.Remove(jobName)
 }
 
 func (a *Agent) ExecuteOnce(jobName string) error {
-	return a.cron.Do(jobName)
+	if err := a.validate(jobName); err != nil {
+		return err
+	}
+
+	a.executor.executeTask(context.Background(), jobName)
+	return nil
 }
 
-func (a *Agent) Schedule() ([]store.Event, error) {
-	return a.cron.Events()
+func (a *Agent) Schedule() ([]EntryRecord, error) {
+	events, err := a.cron.Events()
+	if err != nil {
+		return nil, err
+	}
+
+	var results = make([]EntryRecord, len(events))
+
+	for i, event := range events {
+		results[i] = EntryRecord{
+			Name:      event.Name,
+			Next:      event.Time.Format("2006-01-02 15:04:05"),
+			Displayed: event.Displayed,
+		}
+		if e, ok := a.cron.entries.Get(event.Name); ok {
+			results[i].Spec = e.Spec
+		}
+	}
+	return results, nil
 }
 
 func (a *Agent) Running() ([]Execution, error) {
@@ -79,9 +124,22 @@ func (a *Agent) Running() ([]Execution, error) {
 }
 
 func (a *Agent) History(jobName string) ([]Execution, error) {
+	if jobName == "" {
+		return nil, ErrJobNameEmpty
+	}
 	return a.executor.History(jobName)
 }
 
 func (a *Agent) Jobs() []string {
 	return a.executor.Jobs()
+}
+
+func (a *Agent) validate(jobName string) error {
+	if jobName == "" {
+		return ErrJobNameEmpty
+	}
+	if !a.executor.Contain(jobName) {
+		return ErrJobNotSupport
+	}
+	return nil
 }

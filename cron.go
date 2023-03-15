@@ -26,27 +26,26 @@ type Cron struct {
 	entries  Entries
 	timeline store.Timeline
 
-	add     chan Update
-	remove  chan Update
-	trigger chan string
-	result  chan<- string
+	actionCh    chan Action
+	executionCh chan<- string
 
 	logger *logrus.Logger
 }
 
 func NewCron(
-	timeline store.Timeline,
 	entries Entries,
+	timeline store.Timeline,
 	logger *logrus.Logger,
 	result chan<- string,
 ) *Cron {
 	c := &Cron{
 		entries:  entries,
 		timeline: timeline,
-		add:      make(chan Update),
-		remove:   make(chan Update),
-		result:   result,
-		logger:   logger,
+
+		actionCh:    make(chan Action),
+		executionCh: result,
+
+		logger: logger,
 	}
 
 	if c.entries == nil || c.timeline == nil {
@@ -67,23 +66,17 @@ func (c *Cron) Add(spec string, name string) error {
 	}
 
 	event := store.Event{
-		Name:   name,
-		Time:   time.Now(),
-		Hidden: true,
+		Name:      name,
+		Time:      time.Now(),
+		Displayed: false, // note: default state is paused
 	}
 
-	entry := &Entry{
-		Name:     name,
-		Spec:     spec,
-		schedule: schedule,
+	action := Action{
+		Type:  addType,
+		Entry: &Entry{Name: name, Spec: spec, schedule: schedule},
 	}
 
-	update := Update{
-		Action: addAction,
-		Entry:  entry,
-	}
-
-	if err := c.entries.Backup(update); err != nil {
+	if err := c.entries.Backup(action); err != nil {
 		return err
 	}
 
@@ -91,20 +84,19 @@ func (c *Cron) Add(spec string, name string) error {
 		return err
 	}
 
-	c.add <- update
+	c.actionCh <- action
 
 	return nil
 }
 
-// Remove removes an entry
 func (c *Cron) Remove(name string) error {
 	if err := c.timeline.Remove(name); err != nil {
 		return err
 	}
 
-	update := Update{
-		Action: removeAction,
-		Entry:  &Entry{Name: name},
+	update := Action{
+		Type:  removeType,
+		Entry: &Entry{Name: name},
 	}
 
 	if err := c.entries.Backup(update); err != nil {
@@ -116,21 +108,6 @@ func (c *Cron) Remove(name string) error {
 
 func (c *Cron) Pause(name string) error    { return c.timeline.Hide(name) }
 func (c *Cron) Activate(name string) error { return c.timeline.Display(name) }
-
-func (c *Cron) Do(name string) error {
-	event := store.Event{
-		Name:   name,
-		Time:   time.Now(),
-		Hidden: true,
-	}
-
-	if err := c.timeline.Add(event); err != nil {
-		return err
-	}
-
-	c.trigger <- name
-	return nil
-}
 
 func (c *Cron) Events() ([]store.Event, error) {
 	return c.timeline.Events()
@@ -160,50 +137,40 @@ func (c *Cron) run() {
 
 	for {
 		if e, err := c.timeline.FindEarliest(); err != nil || e.IsEmpty() {
-			timer = time.NewTimer(1 * time.Second)
+			timer = time.NewTimer(5 * time.Second)
 		} else {
 			timer = time.NewTimer(e.Time.Sub(now))
 		}
 
 		for {
-
 			select {
 			case now = <-timer.C:
-				if err := c.handleExpired(now); err != nil {
-					c.logger.Error("handle expired tasks failed: ", err.Error())
+				if err := c.doExpired(now); err != nil {
+					c.logger.Error("run failed: ", err.Error())
 				}
 
-			case u := <-c.add:
+			case action := <-c.actionCh:
 				timer.Stop()
 
-				if u.Action != addAction {
-					return
+				switch action.Type {
+				case addType:
+					c.entries.Add(action.Entry)
+					c.entries.Broadcast(action)
+					c.logger.Debug("add: ", action.Entry)
+				case removeType:
+					c.entries.Remove(action.Entry.Name)
+					c.entries.Broadcast(action)
+					c.logger.Debug("remove: ", action.Entry.Name)
 				}
-				c.entries.Add(u.Entry)
-				c.entries.Broadcast(u)
-				c.logger.Debug("add: ", u.Entry)
 
-			case u := <-c.remove:
-				timer.Stop()
-
-				if u.Action != removeAction {
-					return
-				}
-				c.entries.Remove(u.Entry.Name)
-				c.entries.Broadcast(u)
-				c.logger.Debug("remove: ", u.Entry.Name)
-
-			case name := <-c.trigger:
-				timer.Stop()
-
-				c.logger.Debug("trigger: ", name)
 			}
+
 			break
 		}
 	}
 }
 
-func (c *Cron) handleExpired(now time.Time) error {
+func (c *Cron) doExpired(now time.Time) error {
 	expiredEvents, err := c.timeline.FetchHistory(now)
 	if err != nil {
 		return err
@@ -227,7 +194,7 @@ func (c *Cron) handleExpired(now time.Time) error {
 			continue
 		}
 		if tryOK {
-			c.result <- event.Name
+			c.executionCh <- event.Name
 			c.logger.Info("dispense: ", entry)
 		}
 	}

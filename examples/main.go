@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -51,13 +50,13 @@ func main() {
 		logger,
 	)
 
-	agent.AddJob(job{a: "t1"})
-	agent.AddJob(job{a: "t2"})
-	agent.AddJob(job{a: "t3"})
-	agent.AddJob(job{a: "t4"})
+	agent.RegisterJob(job{a: "t1"})
+	agent.RegisterJob(job{a: "t2"})
+	agent.RegisterJob(job{a: "t3"})
+	agent.RegisterJob(job{a: "t4"})
 
 	agent.Start()
-	log.Fatalln(http.ListenAndServe(":8081", admin.NewHandler(agent)))
+	log.Fatalln(http.ListenAndServe(":8082", admin.NewHandler(agent)))
 }
 
 type job struct{ a string }
@@ -67,10 +66,9 @@ func (j job) Name() string {
 }
 
 func (j job) Run(ctx context.Context) (string, error) {
-	fmt.Println("run", j.Name())
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 	if rand.Intn(10) > 5 {
-		return "", errors.New(j.a)
+		return "run ok", nil
 	}
-	return j.a, nil
+	return "run failed", errors.New("error executed")
 }

@@ -13,17 +13,17 @@ import (
 var _ memberlist.Delegate = (*gossipEntries)(nil)
 
 type Entries interface {
-	// Backup stores an entry's update operation to remote
-	Backup(Update) error
+	// Backup stores an entry's updateType operation to remote
+	Backup(Action) error
 	// Restore restores entries by name
 	Restore([]string) error
-	// Broadcast broadcasts an entry's update operation to peers
-	Broadcast(Update)
+	// Broadcast broadcasts an entry's updateType operation to peers
+	Broadcast(Action)
 
 	Add(*Entry)
 	Remove(string)
-	Get(string) (*Entry, bool)
-	Entries() map[string]*Entry
+	Get(string) (Entry, bool)
+	Entries() map[string]Entry
 }
 
 type gossipEntries struct {
@@ -57,6 +57,7 @@ func NewGossipEntries(
 		log.Fatalln(err)
 	}
 
+	// todo
 	if _, err := list.Join(existing); err != nil {
 		log.Fatalln(err)
 	}
@@ -68,6 +69,8 @@ func NewGossipEntries(
 
 	return entries
 }
+
+func (s *gossipEntries) WithPrefix(prefix string) { s.prefix = prefix }
 
 func (s *gossipEntries) GetBroadcasts(overhead, limit int) [][]byte {
 	return s.q.GetBroadcasts(overhead, limit)
@@ -116,17 +119,17 @@ func (s *gossipEntries) NotifyMsg(b []byte) {
 		return
 	}
 
-	var update Update
+	var update Action
 	if err := json.Unmarshal(b, &update); err != nil {
 		return
 	}
 
-	switch update.Action {
-	case addAction:
+	switch update.Type {
+	case addType:
 		s.Add(update.Entry)
 		s.logger.Debug("add by gossip: ", update.Entry)
 
-	case removeAction:
+	case removeType:
 		s.Remove(update.Entry.Name)
 		s.logger.Debug("remove by gossip: ", update.Entry.Name)
 	}
@@ -134,12 +137,12 @@ func (s *gossipEntries) NotifyMsg(b []byte) {
 }
 
 func (s *gossipEntries) Add(entry *Entry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if entry.schedule == nil {
 		entry.schedule, _ = parseSchedule(entry.Spec)
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.local[entry.Name] = entry
 }
@@ -156,20 +159,20 @@ func (s *gossipEntries) Remove(name string) {
 	entry.Deleted = true
 }
 
-func (s *gossipEntries) Get(name string) (*Entry, bool) {
+func (s *gossipEntries) Get(name string) (Entry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	e, ok := s.local[name]
-	return e, ok
+	return *e, ok
 }
 
-func (s *gossipEntries) Entries() map[string]*Entry {
-	m := make(map[string]*Entry)
+func (s *gossipEntries) Entries() map[string]Entry {
+	m := make(map[string]Entry)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for k, v := range s.local {
-		m[k] = &Entry{
+		m[k] = Entry{
 			Name:     v.Name,
 			Spec:     v.Spec,
 			Deleted:  v.Deleted,
@@ -179,7 +182,7 @@ func (s *gossipEntries) Entries() map[string]*Entry {
 	return m
 }
 
-func (s *gossipEntries) Broadcast(u Update) {
+func (s *gossipEntries) Broadcast(u Action) {
 	b, _ := json.Marshal(u)
 
 	s.q.QueueBroadcast(&broadcast{msg: b})
@@ -203,16 +206,16 @@ func (s *gossipEntries) Restore(names []string) error {
 	return nil
 }
 
-func (s *gossipEntries) Backup(u Update) error {
-	switch u.Action {
-	case addAction:
+func (s *gossipEntries) Backup(u Action) error {
+	switch u.Type {
+	case addType:
 		ser, err := json.Marshal(u.Entry)
 		if err != nil {
 			return err
 		}
 		return s.kv.Set(s.backupKey(u.Entry.Name), ser)
 
-	case removeAction:
+	case removeType:
 		return s.kv.Delete(s.backupKey(u.Entry.Name))
 	}
 	return nil
@@ -222,22 +225,20 @@ func (s *gossipEntries) backupKey(key string) string {
 	return s.prefix + "_" + key
 }
 
-type Action int
+type Type int
 
 const (
-	unkAction Action = iota
-	addAction
-	removeAction
+	invalid Type = iota
+	addType
+	removeType
 )
 
-type Update struct {
-	Action Action `json:"action"`
-	Entry  *Entry `json:"entry"`
+type Action struct {
+	Type  Type   `json:"type"`
+	Entry *Entry `json:"entry"`
 }
 
-type broadcast struct {
-	msg []byte
-}
+type broadcast struct{ msg []byte }
 
 func (b *broadcast) Invalidates(other memberlist.Broadcast) bool { return false }
 func (b *broadcast) Message() []byte                             { return b.msg }

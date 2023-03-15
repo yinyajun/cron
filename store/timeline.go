@@ -10,9 +10,9 @@ import (
 )
 
 type Event struct {
-	Name   string
-	Time   time.Time
-	Hidden bool
+	Name      string
+	Time      time.Time
+	Displayed bool
 }
 
 func (e Event) IsEmpty() bool { return e.Name == "" }
@@ -27,7 +27,7 @@ type Timeline interface {
 	// Display displays the event
 	Display(name string) error
 
-	// TryModify tries to change the event time to t
+	// TryModify tries to change the event time to t (CAS operation)
 	TryModify(e Event, t time.Time) (bool, error)
 
 	// Find the event
@@ -52,13 +52,15 @@ func NewRedisTimeline(cli *redis.Client) Timeline {
 	}
 }
 
+func (r redisTimeline) WithKey(key string) { r.key = key }
+
 func (r redisTimeline) Remove(name string) error {
 	return r.cli.ZRem(context.Background(), r.key, name).Err()
 }
 
 func (r redisTimeline) Add(event Event) error {
 	return r.cli.ZAdd(context.Background(), r.key, &redis.Z{
-		Score:  float64(r.time2ts(event.Time, event.Hidden)),
+		Score:  float64(r.time2ts(event.Time, event.Displayed)),
 		Member: event.Name,
 	}).Err()
 }
@@ -70,13 +72,13 @@ func (r redisTimeline) Hide(name string) error {
 	}
 
 	event := Event{Name: name}
-	event.Time, event.Hidden = r.ts2time(int64(cmd.Val()))
+	event.Time, event.Displayed = r.ts2time(int64(cmd.Val()))
 
-	if event.Hidden {
+	if !event.Displayed {
 		return nil
 	}
 
-	event.Hidden = true
+	event.Displayed = false
 	return r.Add(event)
 }
 
@@ -87,13 +89,13 @@ func (r redisTimeline) Display(name string) error {
 	}
 
 	event := Event{Name: name}
-	event.Time, event.Hidden = r.ts2time(int64(cmd.Val()))
+	event.Time, event.Displayed = r.ts2time(int64(cmd.Val()))
 
-	if !event.Hidden {
+	if event.Displayed {
 		return nil
 	}
 
-	event.Hidden = false
+	event.Displayed = true
 	return r.Add(event)
 }
 
@@ -121,13 +123,14 @@ func (r redisTimeline) TryModify(event Event, t time.Time) (bool, error) {
 	}
 	argv := []interface{}{
 		event.Name,
-		r.time2ts(event.Time, event.Hidden),
-		r.time2ts(t, event.Hidden),
+		r.time2ts(event.Time, event.Displayed),
+		r.time2ts(t, event.Displayed),
 	}
 	res, err := modifyCmd.Run(context.Background(), r.cli, keys, argv...).Result()
 	if err != nil {
 		return false, err
 	}
+
 	return reflect.ValueOf(res).Int() == 1, nil
 }
 
@@ -141,7 +144,7 @@ func (r redisTimeline) Find(name string) (Event, error) {
 	}
 
 	event := Event{Name: name}
-	event.Time, event.Hidden = r.ts2time(int64(cmd.Val()))
+	event.Time, event.Displayed = r.ts2time(int64(cmd.Val()))
 
 	return event, nil
 }
@@ -166,7 +169,7 @@ func (r redisTimeline) FindEarliest() (Event, error) {
 	name := res[0].Member.(string)
 
 	// limited for displayed events
-	return Event{Name: name, Time: time.Unix(ts, 0)}, nil
+	return Event{Name: name, Time: time.Unix(ts, 0), Displayed: true}, nil
 }
 
 func (r redisTimeline) FetchHistory(t time.Time) ([]Event, error) {
@@ -183,8 +186,9 @@ func (r redisTimeline) FetchHistory(t time.Time) ([]Event, error) {
 
 	for i, z := range res {
 		events[i] = Event{
-			Name: z.Member.(string),
-			Time: time.Unix(int64(z.Score), 0),
+			Name:      z.Member.(string),
+			Time:      time.Unix(int64(z.Score), 0),
+			Displayed: true,
 		}
 	}
 
@@ -206,15 +210,15 @@ func (r redisTimeline) Events() ([]Event, error) {
 
 	for i, z := range res {
 		event := Event{Name: z.Member.(string)}
-		event.Time, event.Hidden = r.ts2time(int64(z.Score))
+		event.Time, event.Displayed = r.ts2time(int64(z.Score))
 		events[i] = event
 	}
 
 	return events, nil
 }
 
-func (r redisTimeline) time2ts(t time.Time, hidden bool) int64 {
-	if hidden {
+func (r redisTimeline) time2ts(t time.Time, displayed bool) int64 {
+	if !displayed {
 		return -t.Unix()
 	}
 	return t.Unix()
@@ -222,7 +226,7 @@ func (r redisTimeline) time2ts(t time.Time, hidden bool) int64 {
 
 func (r redisTimeline) ts2time(ts int64) (time.Time, bool) {
 	if ts > 0 {
-		return time.Unix(ts, 0), false
+		return time.Unix(ts, 0), true
 	}
-	return time.Unix(-ts, 0), true
+	return time.Unix(-ts, 0), false
 }

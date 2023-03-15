@@ -46,7 +46,7 @@ func (e *Execution) finishWith(output string, err error) {
 		e.Success = true
 		return
 	}
-	e.Output = err.Error()
+	e.Output = fmt.Sprintf("Error: %s", err.Error())
 }
 
 type Job interface {
@@ -55,9 +55,9 @@ type Job interface {
 }
 
 type Executor struct {
-	name    string
-	trigger chan string
-	jobs    map[string]Job
+	name     string
+	receiver chan string
+	jobs     map[string]Job
 
 	execution store.KV
 	history   store.List
@@ -73,8 +73,8 @@ type Executor struct {
 
 func NewExecutor(cli *redis.Client) *Executor {
 	e := &Executor{
-		trigger: make(chan string),
-		jobs:    make(map[string]Job),
+		receiver: make(chan string),
+		jobs:     make(map[string]Job),
 
 		execution: store.NewRedisKV(cli),
 		history:   store.NewRedisList(cli),
@@ -89,13 +89,18 @@ func NewExecutor(cli *redis.Client) *Executor {
 	return e
 }
 
-func (f *Executor) Trigger() chan string { return f.trigger }
+func (f *Executor) Receiver() chan string { return f.receiver }
 
 func (f *Executor) Contain(jobName string) bool {
-	f.mu.RLock()
-	_, ok := f.jobs[jobName]
-	f.mu.RUnlock()
+	_, ok := f.Get(jobName)
 	return ok
+}
+
+func (f *Executor) Get(jobName string) (Job, bool) {
+	f.mu.RLock()
+	job, ok := f.jobs[jobName]
+	f.mu.RUnlock()
+	return job, ok
 }
 
 func (f *Executor) Add(job Job) {
@@ -147,7 +152,7 @@ func (f *Executor) History(jobName string) ([]Execution, error) {
 }
 
 func (f *Executor) consume() {
-	for name := range f.trigger {
+	for name := range f.receiver {
 		go f.executeTask(context.Background(), name)
 	}
 }
@@ -182,6 +187,7 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 	if len(output) > MaxOutputLength {
 		output = output[:MaxOutputLength]
 	}
+
 }
 
 func (f *Executor) fetchExecution(id string) Execution {

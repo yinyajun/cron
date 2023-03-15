@@ -2,12 +2,14 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/yinyajun/cron"
 )
 
 func renderJson(w http.ResponseWriter, resp interface{}) {
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -20,7 +22,7 @@ func newAddHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 		spec := query.Get("spec")
 		job := query.Get("job")
 		if err := agent.Add(spec, job); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), 502)
 			return
 		}
 		renderJson(w, "ok")
@@ -35,6 +37,7 @@ func newActiveHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		fmt.Println(">>", "active", job)
 		renderJson(w, "ok")
 	}
 }
@@ -47,6 +50,7 @@ func newPauseHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		fmt.Println(">>", "pause", job)
 		renderJson(w, "ok")
 	}
 }
