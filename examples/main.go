@@ -64,7 +64,8 @@ func main() {
 	agent.RegisterJob(job{a: "t12"})
 
 	agent.Start()
-	log.Fatalln(http.ListenAndServe(":8082", admin.NewHandler(agent)))
+
+	log.Fatalln(http.ListenAndServe(":8080", admin.NewHandler(agent)))
 }
 
 type job struct{ a string }

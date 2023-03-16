@@ -3,13 +3,14 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	cron_admin "github.com/yinyajun/cron-admin"
 	"net/http"
 
 	"github.com/yinyajun/cron"
 )
 
 func renderJson(w http.ResponseWriter, resp interface{}) {
-	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -137,6 +138,8 @@ func NewHandler(agent *cron.Agent) *Handler {
 	h.mux.Handle("/api/v1/schedule", newScheduleHandlerFunc(agent))
 	h.mux.Handle("/api/v1/history", newHistoryHandlerFunc(agent))
 	h.mux.Handle("/api/v1/jobs", newJobsHandlerFunc(agent))
+
+	h.mux.Handle("/", cron_admin.UIHandler())
 
 	return h
 }
