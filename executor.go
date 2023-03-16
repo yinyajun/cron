@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -12,35 +13,29 @@ import (
 	"github.com/yinyajun/cron/store"
 )
 
-// 单次执行
-// 允许重复？
-// 执行历史 executions
-// 活跃任务 running
-
 const MaxOutputLength = 1000
 
 type Execution struct {
 	ID         uuid.UUID `json:"id"`
 	Name       string    `json:"name"`
-	StartedAt  time.Time `json:"started_at"`
-	FinishedAt time.Time `json:"finished_at"`
+	StartedAt  string    `json:"started_at"`
+	FinishedAt string    `json:"finished_at"`
 	Node       string    `json:"node"`
 	Output     string    `json:"output"`
 	Success    bool      `json:"success"`
-	invalid    bool
 }
 
 func newExecution(name, node string) *Execution {
 	return &Execution{
 		ID:        uuid.New(),
 		Name:      name,
-		StartedAt: time.Now(),
+		StartedAt: time.Now().Format("2006-01-02 15:04:05"),
 		Node:      node,
 	}
 }
 
 func (e *Execution) finishWith(output string, err error) {
-	e.FinishedAt = time.Now()
+	e.FinishedAt = time.Now().Format("2006-01-02 15:04:05")
 	if err == nil {
 		e.Output = output
 		e.Success = true
@@ -55,13 +50,13 @@ type Job interface {
 }
 
 type Executor struct {
-	name     string
+	node     string
 	receiver chan string
 	jobs     map[string]Job
 
-	execution store.KV
-	history   store.List
-	running   store.Set
+	kv      store.KV
+	history store.List
+	running store.Set
 
 	maxHistoryNum int64
 	keyExecution  string
@@ -72,15 +67,17 @@ type Executor struct {
 }
 
 func NewExecutor(cli *redis.Client) *Executor {
+	hostname, _ := os.Hostname()
 	e := &Executor{
+		node:     hostname,
 		receiver: make(chan string),
 		jobs:     make(map[string]Job),
 
-		execution: store.NewRedisKV(cli),
-		history:   store.NewRedisList(cli),
-		running:   store.NewRedisSet(cli),
+		kv:      store.NewRedisKV(cli),
+		history: store.NewRedisList(cli),
+		running: store.NewRedisSet(cli),
 
-		maxHistoryNum: 10,
+		maxHistoryNum: 4,
 		keyExecution:  "_exe",
 		keyHistory:    "_exe_hist",
 		keyRunning:    "_exe_running",
@@ -88,6 +85,8 @@ func NewExecutor(cli *redis.Client) *Executor {
 
 	return e
 }
+
+func (f *Executor) WithNode(node string) { f.node = node }
 
 func (f *Executor) Receiver() chan string { return f.receiver }
 
@@ -103,7 +102,7 @@ func (f *Executor) Get(jobName string) (Job, bool) {
 	return job, ok
 }
 
-func (f *Executor) Add(job Job) {
+func (f *Executor) Register(job Job) {
 	f.mu.Lock()
 	f.jobs[job.Name()] = job
 	f.mu.Unlock()
@@ -127,28 +126,17 @@ func (f *Executor) Running() ([]Execution, error) {
 		return nil, err
 	}
 
-	var executions = make([]Execution, len(ids))
-
-	for i, id := range ids {
-		executions[i] = f.fetchExecution(id)
-		time.Sleep(5 * time.Millisecond)
-	}
-	return executions, nil
+	return f.fetchExecutions(ids), nil
 }
 
 func (f *Executor) History(jobName string) ([]Execution, error) {
-	key := f.keyHistory + "_" + jobName
+	key := f.historyKey(jobName)
 	ids, err := f.history.LRange(key)
 	if err != nil {
 		return nil, err
 	}
-	var executions = make([]Execution, len(ids))
 
-	for i, id := range ids {
-		executions[i] = f.fetchExecution(id)
-		time.Sleep(5 * time.Millisecond)
-	}
-	return executions, nil
+	return f.fetchExecutions(ids), nil
 }
 
 func (f *Executor) consume() {
@@ -158,7 +146,7 @@ func (f *Executor) consume() {
 }
 
 func (f *Executor) executeTask(context context.Context, jobName string) {
-	execution := newExecution(jobName, f.name)
+	execution := newExecution(jobName, f.node)
 	f.updateExecution(execution)
 	f.addToRunning(execution)
 	f.updateHistory(execution)
@@ -190,28 +178,34 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 
 }
 
-func (f *Executor) fetchExecution(id string) Execution {
-	_uuid, err := uuid.Parse(id)
-	if err != nil {
-		return Execution{ID: _uuid, invalid: true}
-	}
+func (f *Executor) fetchExecutions(ids []string) []Execution {
+	var executions []Execution
 
-	bytes, err := f.execution.Get(f.keyExecution + "_" + id)
-	if err != nil {
-		return Execution{ID: _uuid, invalid: true}
-	}
+	for _, id := range ids {
+		ser, err := f.kv.Get(f.executionKey(id))
+		if err != nil {
+			// todo
+			continue
+		}
 
-	var execution Execution
+		var execution Execution
 
-	if err := json.Unmarshal(bytes, &execution); err != nil {
-		return Execution{ID: _uuid, invalid: true}
+		if err := json.Unmarshal([]byte(ser), &execution); err != nil {
+			// todo
+			continue
+		}
+		executions = append(executions, execution)
 	}
-	return execution
+	return executions
 }
 
 func (f *Executor) updateExecution(execution *Execution) {
 	ser, _ := json.Marshal(execution)
-	f.execution.Set(f.keyExecution+"_"+execution.ID.String(), ser)
+	f.kv.SetEx(f.executionKey(execution.ID.String()), ser, 48*time.Hour)
+}
+
+func (f *Executor) clearExecution(id string) {
+	f.kv.Del(f.executionKey(id))
 }
 
 func (f *Executor) addToRunning(execution *Execution) {
@@ -223,10 +217,20 @@ func (f *Executor) remFromRunning(execution *Execution) {
 }
 
 func (f *Executor) updateHistory(execution *Execution) {
-	key := f.keyHistory + "_" + execution.Name
+	key := f.historyKey(execution.Name)
 	size, _ := f.history.LLen(key)
 	if size >= f.maxHistoryNum {
-		f.history.RPop(key)
+		if id, err := f.history.RPop(key); err == nil {
+			f.clearExecution(id)
+		}
 	}
 	f.history.LPush(key, execution.ID.String())
+}
+
+func (f *Executor) historyKey(name string) string {
+	return f.keyHistory + "_" + name
+}
+
+func (f *Executor) executionKey(id string) string {
+	return f.keyExecution + "_" + id
 }

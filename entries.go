@@ -15,7 +15,7 @@ var _ memberlist.Delegate = (*gossipEntries)(nil)
 type Entries interface {
 	// Backup stores an entry's updateType operation to remote
 	Backup(Action) error
-	// Restore restores entries by name
+	// Restore restores entries by node
 	Restore([]string) error
 	// Broadcast broadcasts an entry's updateType operation to peers
 	Broadcast(Action)
@@ -213,10 +213,10 @@ func (s *gossipEntries) Backup(u Action) error {
 		if err != nil {
 			return err
 		}
-		return s.kv.Set(s.backupKey(u.Entry.Name), ser)
+		return s.kv.SetEx(s.backupKey(u.Entry.Name), ser, 0)
 
 	case removeType:
-		return s.kv.Delete(s.backupKey(u.Entry.Name))
+		return s.kv.Del(s.backupKey(u.Entry.Name))
 	}
 	return nil
 }

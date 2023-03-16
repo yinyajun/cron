@@ -10,7 +10,7 @@ import (
 )
 
 type Entry struct {
-	Name    string `json:"name"`
+	Name    string `json:"node"`
 	Spec    string `json:"spec"`
 	Deleted bool   `json:"deleted,omitempty"`
 

@@ -12,7 +12,7 @@ import (
 
 var (
 	ErrJobNotSupport = errors.New("unsupported job")
-	ErrJobNameEmpty  = errors.New("job name can not be empty")
+	ErrJobNameEmpty  = errors.New("job node can not be empty")
 )
 
 type EntryRecord struct {
@@ -53,7 +53,7 @@ func (a *Agent) RegisterJob(job Job) error {
 	if job.Name() == "" {
 		return ErrJobNameEmpty
 	}
-	a.executor.Add(job)
+	a.executor.Register(job)
 	return nil
 }
 
