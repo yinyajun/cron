@@ -38,6 +38,8 @@ type Timeline interface {
 	FetchHistory(t time.Time) ([]Event, error)
 	// Events  including hidden events
 	Events() ([]Event, error)
+
+	Close()
 }
 
 type redisTimeline struct {
@@ -216,6 +218,8 @@ func (r redisTimeline) Events() ([]Event, error) {
 
 	return events, nil
 }
+
+func (r redisTimeline) Close() { r.cli.Close() }
 
 func (r redisTimeline) time2ts(t time.Time, displayed bool) int64 {
 	if !displayed {

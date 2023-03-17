@@ -1,11 +1,10 @@
-package admin
+package cron
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/yinyajun/cron"
 	"github.com/yinyajun/cron-admin"
 )
 
@@ -37,7 +36,7 @@ func renderErrJson(w http.ResponseWriter, code int, msg string) {
 	}
 }
 
-func newAddHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newAddHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		spec := query.Get("spec")
@@ -50,7 +49,7 @@ func newAddHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newActiveHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newActiveHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		job := query.Get("job")
@@ -63,7 +62,7 @@ func newActiveHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newPauseHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newPauseHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		job := query.Get("job")
@@ -76,7 +75,7 @@ func newPauseHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newRemoveHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newRemoveHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		job := query.Get("job")
@@ -88,7 +87,7 @@ func newRemoveHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newExecuteOnceHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newExecuteOnceHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		job := query.Get("job")
@@ -100,7 +99,7 @@ func newExecuteOnceHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newScheduleHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newScheduleHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		events, err := agent.Schedule()
 		if err != nil {
@@ -111,7 +110,7 @@ func newScheduleHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newRunningHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newRunningHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		executions, err := agent.Running()
 		if err != nil {
@@ -122,7 +121,7 @@ func newRunningHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newHistoryHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newHistoryHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		job := query.Get("job")
@@ -135,7 +134,7 @@ func newHistoryHandlerFunc(agent *cron.Agent) http.HandlerFunc {
 	}
 }
 
-func newJobsHandlerFunc(agent *cron.Agent) http.HandlerFunc {
+func newJobsHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		renderJson(w, agent.Jobs())
 	}
@@ -145,7 +144,7 @@ type Router struct {
 	mux *http.ServeMux
 }
 
-func NewHandler(agent *cron.Agent) Router {
+func ApiRouter(agent *Agent) Router {
 	h := Router{mux: http.NewServeMux()}
 
 	h.mux.Handle("/api/v1/add", newAddHandlerFunc(agent))

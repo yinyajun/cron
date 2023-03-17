@@ -28,6 +28,7 @@ type Cron struct {
 
 	actionCh    chan Action
 	executionCh chan<- string
+	stop        chan struct{}
 
 	logger *logrus.Logger
 }
@@ -44,6 +45,7 @@ func NewCron(
 
 		actionCh:    make(chan Action),
 		executionCh: result,
+		stop:        make(chan struct{}),
 
 		logger: logger,
 	}
@@ -109,9 +111,9 @@ func (c *Cron) Remove(name string) error {
 func (c *Cron) Pause(name string) error    { return c.timeline.Hide(name) }
 func (c *Cron) Activate(name string) error { return c.timeline.Display(name) }
 
-func (c *Cron) Events() ([]store.Event, error) {
-	return c.timeline.Events()
-}
+func (c *Cron) Events() ([]store.Event, error) { return c.timeline.Events() }
+
+func (c *Cron) close() { c.stop <- struct{}{} }
 
 func (c *Cron) restore() error {
 	events, err := c.timeline.Events()
@@ -162,7 +164,10 @@ func (c *Cron) run() {
 					c.entries.Broadcast(action)
 					c.logger.Debug("remove: ", action.Entry.Name)
 				}
-
+			case <-c.stop:
+				timer.Stop()
+				close(c.executionCh)
+				return
 			}
 
 			break

@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
 	"math/rand"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -15,7 +13,6 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/sirupsen/logrus"
 	"github.com/yinyajun/cron"
-	"github.com/yinyajun/cron/admin"
 )
 
 var (
@@ -44,6 +41,7 @@ func main() {
 	nodes := strings.Split(*nodes, ",")
 
 	agent := cron.NewAgent(
+		":8080",
 		cli,
 		nodes,
 		config,
@@ -63,9 +61,7 @@ func main() {
 	agent.RegisterJob(job{a: "t11"})
 	agent.RegisterJob(job{a: "t12"})
 
-	agent.Start()
-
-	log.Fatalln(http.ListenAndServe(":8080", admin.NewHandler(agent)))
+	agent.Run()
 }
 
 type job struct{ a string }

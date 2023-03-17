@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -64,6 +65,7 @@ type Executor struct {
 	keyRunning    string
 
 	mu sync.RWMutex
+	wg sync.WaitGroup
 }
 
 func NewExecutor(cli *redis.Client) *Executor {
@@ -139,9 +141,18 @@ func (f *Executor) History(jobName string) ([]Execution, error) {
 	return f.fetchExecutions(ids), nil
 }
 
+func (f *Executor) close() {
+	f.wg.Wait()
+	log.Println("executor closed")
+}
+
 func (f *Executor) consume() {
 	for name := range f.receiver {
-		go f.executeTask(context.Background(), name)
+		f.wg.Add(1)
+		go func(name string) {
+			f.executeTask(context.Background(), name)
+			f.wg.Done()
+		}(name)
 	}
 }
 

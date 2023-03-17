@@ -3,6 +3,11 @@ package cron
 import (
 	"context"
 	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
@@ -25,9 +30,14 @@ type EntryRecord struct {
 type Agent struct {
 	cron     *Cron
 	executor *Executor
+
+	addr string
+	c    chan os.Signal
 }
 
-func NewAgent(cli *redis.Client,
+func NewAgent(
+	addr string,
+	cli *redis.Client,
 	existing []string,
 	conf *memberlist.Config,
 	logger *logrus.Logger) *Agent {
@@ -41,12 +51,33 @@ func NewAgent(cli *redis.Client,
 	return &Agent{
 		cron:     cron,
 		executor: executor,
+
+		addr: addr,
+		c:    make(chan os.Signal),
 	}
 }
 
-func (a *Agent) Start() {
+func (a *Agent) Run() {
 	go a.executor.consume()
 	go a.cron.run()
+
+	go func() {
+		log.Println("start admin http server", a.addr)
+		log.Fatalln(http.ListenAndServe(a.addr, ApiRouter(a)))
+	}()
+
+	signal.Notify(a.c, syscall.SIGINT)
+	s := <-a.c
+	log.Println("receive signal:", s)
+	a.close()
+}
+
+func (a *Agent) close() {
+	a.cron.close()
+	a.executor.close()
+	a.cron.timeline.Close()
+	a.cron.entries.Close()
+
 }
 
 func (a *Agent) RegisterJob(job Job) error {

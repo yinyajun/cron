@@ -24,6 +24,8 @@ type Entries interface {
 	Remove(string)
 	Get(string) (Entry, bool)
 	Entries() map[string]Entry
+
+	Close()
 }
 
 type gossipEntries struct {
@@ -220,6 +222,8 @@ func (s *gossipEntries) Backup(u Action) error {
 	}
 	return nil
 }
+
+func (s *gossipEntries) Close() { s.list.Shutdown() }
 
 func (s *gossipEntries) backupKey(key string) string {
 	return s.prefix + "_" + key
