@@ -121,7 +121,7 @@ func (f *Executor) Jobs() []string {
 }
 
 func (f *Executor) Running() ([]Execution, error) {
-	ids, err := f.running.SRange(f.keyPrefix)
+	ids, err := f.running.SRange(f.runningKey())
 	if err != nil {
 		return nil, err
 	}
