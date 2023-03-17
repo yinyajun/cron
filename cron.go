@@ -133,7 +133,7 @@ func (c *Cron) restore() {
 	if err := c.entries.Restore(names); err != nil {
 		Logger.Error("restore ", err)
 	}
-	Logger.Debugf("restore %d events from timeline", len(events))
+	Logger.Infof("restore %d events from timeline", len(events))
 }
 
 func (c *Cron) run() {

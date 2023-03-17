@@ -145,7 +145,7 @@ func (f *Executor) consume() {
 func (f *Executor) executeTask(context context.Context, jobName string) {
 	f.wg.Add(1)
 	execution := newExecution(jobName, f.node)
-	Logger.Debugf("begin %s", execution.ID)
+	Logger.Debugf("[%s] begin", execution.ID)
 	f.updateExecution(execution)
 	f.addToRunning(execution)
 	f.updateHistory(execution)
@@ -164,7 +164,7 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 		f.updateExecution(execution)
 		f.remFromRunning(execution)
 		f.wg.Done()
-		Logger.Debugf("finish %s", execution.ID)
+		Logger.Debugf("[%s] finish", execution.ID)
 	}()
 
 	if !ok {

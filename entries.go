@@ -183,7 +183,7 @@ func (s *Entries) Restore(names []string) error {
 		}
 
 		s.Add(e)
-		Logger.Debug("restore: ", e)
+		Logger.Info("restore: ", e)
 	}
 	return nil
 }
