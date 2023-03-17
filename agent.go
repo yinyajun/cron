@@ -150,7 +150,7 @@ func (a *Agent) ExecuteOnce(jobName string) error {
 		return err
 	}
 
-	a.executor.executeTask(context.Background(), jobName)
+	go a.executor.executeTask(context.Background(), jobName)
 	return nil
 }
 

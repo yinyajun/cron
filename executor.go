@@ -138,16 +138,14 @@ func (f *Executor) close() { f.wg.Wait() }
 
 func (f *Executor) consume() {
 	for name := range f.receiver {
-		f.wg.Add(1)
-		go func(name string) {
-			f.executeTask(context.Background(), name)
-			f.wg.Done()
-		}(name)
+		go f.executeTask(context.Background(), name)
 	}
 }
 
 func (f *Executor) executeTask(context context.Context, jobName string) {
+	f.wg.Add(1)
 	execution := newExecution(jobName, f.node)
+	Logger.Debugf("begin %s", execution.ID)
 	f.updateExecution(execution)
 	f.addToRunning(execution)
 	f.updateHistory(execution)
@@ -165,6 +163,8 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 		execution.finishWith(result, err)
 		f.updateExecution(execution)
 		f.remFromRunning(execution)
+		f.wg.Done()
+		Logger.Debugf("finish %s", execution.ID)
 	}()
 
 	if !ok {

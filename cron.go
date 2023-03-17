@@ -86,14 +86,15 @@ func (c *Cron) Remove(name string) error {
 		return err
 	}
 
-	update := Action{
+	action := Action{
 		Type:  removeType,
 		Entry: &Entry{Name: name},
 	}
 
-	if err := c.entries.Backup(update); err != nil {
+	if err := c.entries.Backup(action); err != nil {
 		return err
 	}
+	c.actionCh <- action
 
 	return nil
 }
