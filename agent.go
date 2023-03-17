@@ -227,27 +227,28 @@ type Conf struct {
 	BindPort   int    `json:"bind_port"`
 }
 
-func ParseConfig(file string) Conf {
+func ParseConfig(file string) *Conf {
+	conf := &Conf{}
+	defer func() {
+		if conf.NodeName == "" {
+			hostname, _ := os.Hostname()
+			conf.NodeName = hostname
+		}
+		if conf.HTTPAddr == "" {
+			conf.HTTPAddr = ":8080"
+		}
+	}()
+
 	f, err := os.Open(file)
 	if err != nil {
 		Logger.Error("ParseConfig ", err)
-		return Conf{}
+		return conf
 	}
 	defer f.Close()
 
-	conf := Conf{}
 	if err = json.NewDecoder(f).Decode(&conf); err != nil {
 		Logger.Error("ParseConfig ", err)
-		return Conf{}
-	}
-
-	if conf.NodeName == "" {
-		hostname, _ := os.Hostname()
-		conf.NodeName = hostname
-	}
-
-	if conf.HTTPAddr == "" {
-		conf.HTTPAddr = ":8080"
+		return conf
 	}
 
 	Logger.Info("load config ok")

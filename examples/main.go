@@ -21,8 +21,7 @@ func init() {
 }
 
 func main() {
-	conf := cron.ParseConfig(*config)
-	agent := cron.NewAgent(conf)
+	agent := cron.NewAgent(*cron.ParseConfig(*config))
 	agent.Join(strings.Split(*nodes, ","))
 
 	registerJob(agent)
