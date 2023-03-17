@@ -2,66 +2,42 @@ package cron
 
 import (
 	"encoding/json"
-	"log"
+	"github.com/go-redis/redis/v8"
 	"sync"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/sirupsen/logrus"
 	"github.com/yinyajun/cron/store"
 )
 
-var _ memberlist.Delegate = (*gossipEntries)(nil)
+var _ memberlist.Delegate = (*Entries)(nil)
 
-type Entries interface {
-	// Backup stores an entry's updateType operation to remote
-	Backup(Action) error
-	// Restore restores entries by node
-	Restore([]string) error
-	// Broadcast broadcasts an entry's updateType operation to peers
-	Broadcast(Action)
-
-	Add(*Entry)
-	Remove(string)
-	Get(string) (Entry, bool)
-	Entries() map[string]Entry
-
-	Close()
-}
-
-type gossipEntries struct {
+type Entries struct {
 	mu sync.RWMutex
 
-	prefix string
-	kv     store.KV
-	local  map[string]*Entry
-	list   *memberlist.Memberlist
-	q      *memberlist.TransmitLimitedQueue
-	logger *logrus.Logger
+	keyPrefix string
+
+	kv    store.KV
+	local map[string]*Entry
+	list  *memberlist.Memberlist
+	q     *memberlist.TransmitLimitedQueue
 }
 
 func NewGossipEntries(
-	kv store.KV,
+	cli *redis.Client,
 	config *memberlist.Config,
-	existing []string,
-) Entries {
+) *Entries {
 
-	entries := &gossipEntries{
-		prefix: "_entries",
-		local:  make(map[string]*Entry),
-		kv:     kv,
-		logger: logrus.New(),
+	entries := &Entries{
+		keyPrefix: "_entries",
+		local:     make(map[string]*Entry),
+		kv:        store.NewRedisKV(cli),
 	}
 
 	config.Delegate = entries
 
 	list, err := memberlist.Create(config)
 	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// todo
-	if _, err := list.Join(existing); err != nil {
-		log.Fatalln(err)
+		Logger.Fatalln(err)
 	}
 
 	entries.list = list
@@ -72,13 +48,19 @@ func NewGossipEntries(
 	return entries
 }
 
-func (s *gossipEntries) WithPrefix(prefix string) { s.prefix = prefix }
+func (s *Entries) WithKeyPrefix(prefix string) { s.keyPrefix = prefix }
 
-func (s *gossipEntries) GetBroadcasts(overhead, limit int) [][]byte {
+func (s *Entries) Join(existing []string) {
+	if _, err := s.list.Join(existing); err != nil {
+		Logger.Fatalln(err)
+	}
+}
+
+func (s *Entries) GetBroadcasts(overhead, limit int) [][]byte {
 	return s.q.GetBroadcasts(overhead, limit)
 }
 
-func (s *gossipEntries) LocalState(join bool) []byte {
+func (s *Entries) LocalState(join bool) []byte {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -86,7 +68,7 @@ func (s *gossipEntries) LocalState(join bool) []byte {
 	return b
 }
 
-func (s *gossipEntries) MergeRemoteState(buf []byte, join bool) {
+func (s *Entries) MergeRemoteState(buf []byte, join bool) {
 	if len(buf) == 0 {
 		return
 	}
@@ -100,23 +82,23 @@ func (s *gossipEntries) MergeRemoteState(buf []byte, join bool) {
 		e, ok := s.Get(name)
 		if !ok {
 			s.Add(r)
-			s.logger.Debug("add by push/pull: ", r)
+			Logger.Debug("add by push/pull: ", r)
 			continue
 		}
 
 		if !e.Deleted && r.Deleted {
 			s.Remove(name)
-			s.logger.Debug("delete by push/pull: ", r)
+			Logger.Debug("delete by push/pull: ", r)
 			continue
 		}
 	}
 }
 
-func (s *gossipEntries) NodeMeta(limit int) []byte {
+func (s *Entries) NodeMeta(limit int) []byte {
 	return []byte{}
 }
 
-func (s *gossipEntries) NotifyMsg(b []byte) {
+func (s *Entries) NotifyMsg(b []byte) {
 	if len(b) == 0 {
 		return
 	}
@@ -129,16 +111,16 @@ func (s *gossipEntries) NotifyMsg(b []byte) {
 	switch update.Type {
 	case addType:
 		s.Add(update.Entry)
-		s.logger.Debug("add by gossip: ", update.Entry)
+		Logger.Debug("add by gossip: ", update.Entry)
 
 	case removeType:
 		s.Remove(update.Entry.Name)
-		s.logger.Debug("remove by gossip: ", update.Entry.Name)
+		Logger.Debug("remove by gossip: ", update.Entry.Name)
 	}
 
 }
 
-func (s *gossipEntries) Add(entry *Entry) {
+func (s *Entries) Add(entry *Entry) {
 	if entry.schedule == nil {
 		entry.schedule, _ = parseSchedule(entry.Spec)
 	}
@@ -149,7 +131,7 @@ func (s *gossipEntries) Add(entry *Entry) {
 	s.local[entry.Name] = entry
 }
 
-func (s *gossipEntries) Remove(name string) {
+func (s *Entries) Remove(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -161,14 +143,14 @@ func (s *gossipEntries) Remove(name string) {
 	entry.Deleted = true
 }
 
-func (s *gossipEntries) Get(name string) (Entry, bool) {
+func (s *Entries) Get(name string) (Entry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	e, ok := s.local[name]
 	return *e, ok
 }
 
-func (s *gossipEntries) Entries() map[string]Entry {
+func (s *Entries) Entries() map[string]Entry {
 	m := make(map[string]Entry)
 
 	s.mu.RLock()
@@ -184,13 +166,13 @@ func (s *gossipEntries) Entries() map[string]Entry {
 	return m
 }
 
-func (s *gossipEntries) Broadcast(u Action) {
+func (s *Entries) Broadcast(u Action) {
 	b, _ := json.Marshal(u)
 
 	s.q.QueueBroadcast(&broadcast{msg: b})
 }
 
-func (s *gossipEntries) Restore(names []string) error {
+func (s *Entries) Restore(names []string) error {
 	for _, name := range names {
 		e := &Entry{}
 		ser, err := s.kv.Get(s.backupKey(name))
@@ -203,12 +185,12 @@ func (s *gossipEntries) Restore(names []string) error {
 		}
 
 		s.Add(e)
-		s.logger.Debug("restore: ", e)
+		Logger.Debug("restore: ", e)
 	}
 	return nil
 }
 
-func (s *gossipEntries) Backup(u Action) error {
+func (s *Entries) Backup(u Action) error {
 	switch u.Type {
 	case addType:
 		ser, err := json.Marshal(u.Entry)
@@ -223,10 +205,10 @@ func (s *gossipEntries) Backup(u Action) error {
 	return nil
 }
 
-func (s *gossipEntries) Close() { s.list.Shutdown() }
+func (s *Entries) Close() { s.list.Shutdown() }
 
-func (s *gossipEntries) backupKey(key string) string {
-	return s.prefix + "_" + key
+func (s *Entries) backupKey(key string) string {
+	return s.keyPrefix + "_" + key
 }
 
 type Type int

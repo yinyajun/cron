@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/sirupsen/logrus"
 	"github.com/yinyajun/cron/store"
 )
 
@@ -23,22 +22,19 @@ func (e Entry) String() string {
 }
 
 type Cron struct {
-	entries  Entries
+	entries  *Entries
 	timeline store.Timeline
 
 	actionCh    chan Action
 	executionCh chan<- string
 	stop        chan struct{}
-
-	logger *logrus.Logger
 }
 
 func NewCron(
-	entries Entries,
+	entries *Entries,
 	timeline store.Timeline,
-	logger *logrus.Logger,
-	result chan<- string,
-) *Cron {
+	result chan<- string) *Cron {
+
 	c := &Cron{
 		entries:  entries,
 		timeline: timeline,
@@ -46,16 +42,14 @@ func NewCron(
 		actionCh:    make(chan Action),
 		executionCh: result,
 		stop:        make(chan struct{}),
-
-		logger: logger,
 	}
 
 	if c.entries == nil || c.timeline == nil {
-		c.logger.Fatalln("cron init failed")
+		Logger.Fatalln("cron init failed")
 	}
 
 	if err := c.restore(); err != nil {
-		c.logger.Error("restore failed: ", err)
+		Logger.Error("restore failed: ", err)
 	}
 
 	return c
@@ -129,7 +123,7 @@ func (c *Cron) restore() error {
 	if err := c.entries.Restore(names); err != nil {
 		return err
 	}
-	c.logger.Debugf("restore %d events from timeline", len(events))
+	Logger.Debugf("restore %d events from timeline", len(events))
 	return nil
 }
 
@@ -148,7 +142,7 @@ func (c *Cron) run() {
 			select {
 			case now = <-timer.C:
 				if err := c.doExpired(now); err != nil {
-					c.logger.Error("run failed: ", err.Error())
+					Logger.Error("run failed: ", err.Error())
 				}
 
 			case action := <-c.actionCh:
@@ -158,11 +152,11 @@ func (c *Cron) run() {
 				case addType:
 					c.entries.Add(action.Entry)
 					c.entries.Broadcast(action)
-					c.logger.Debug("add: ", action.Entry)
+					Logger.Debug("add: ", action.Entry)
 				case removeType:
 					c.entries.Remove(action.Entry.Name)
 					c.entries.Broadcast(action)
-					c.logger.Debug("remove: ", action.Entry.Name)
+					Logger.Debug("remove: ", action.Entry.Name)
 				}
 			case <-c.stop:
 				timer.Stop()
@@ -195,12 +189,12 @@ func (c *Cron) doExpired(now time.Time) error {
 
 		tryOK, err := c.timeline.TryModify(event, next)
 		if err != nil {
-			c.logger.Error("dispense failed: ", err.Error())
+			Logger.Error("dispense failed: ", err.Error())
 			continue
 		}
 		if tryOK {
 			c.executionCh <- event.Name
-			c.logger.Info("dispense: ", entry)
+			Logger.Info("dispense: ", entry)
 		}
 	}
 	return nil

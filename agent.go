@@ -2,8 +2,8 @@ package cron
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
-	"github.com/sirupsen/logrus"
 	"github.com/yinyajun/cron/store"
 )
 
@@ -31,45 +30,79 @@ type Agent struct {
 	cron     *Cron
 	executor *Executor
 
-	addr string
-	c    chan os.Signal
+	conf Conf
+	stop chan os.Signal
 }
 
-func NewAgent(
-	addr string,
-	cli *redis.Client,
-	existing []string,
-	conf *memberlist.Config,
-	logger *logrus.Logger) *Agent {
-	kv := store.NewRedisKV(cli)
+func NewAgent(conf Conf) *Agent {
+	cli := redis.NewClient(&conf.RedisOptions)
+
+	// gossip conf
+	gossipConf := memberlist.DefaultLANConfig()
+	if conf.GossipType == "Local" {
+		gossipConf = memberlist.DefaultLocalConfig()
+	}
+	if conf.GossipType == "WAN" {
+		gossipConf = memberlist.DefaultWANConfig()
+	}
+	if conf.BindAddr != "" {
+		gossipConf.BindAddr = conf.BindAddr
+	}
+	if conf.BindPort != 0 {
+		gossipConf.BindPort = conf.BindPort
+	}
+	if conf.NodeName == "" {
+		hostname, _ := os.Hostname()
+		conf.NodeName = hostname
+	}
+	gossipConf.Name = conf.NodeName
 
 	timeline := store.NewRedisTimeline(cli)
-	entries := NewGossipEntries(kv, conf, existing)
-	executor := NewExecutor(cli)
-	cron := NewCron(entries, timeline, logger, executor.Receiver())
+	entries := NewGossipEntries(cli, gossipConf)
+	executor := NewExecutor(cli, conf.NodeName)
+
+	// apply other conf
+	if conf.KeyEntry != "" {
+		entries.WithKeyPrefix(conf.KeyEntry)
+	}
+	if conf.NodeName != "" {
+		executor.WithNode(conf.NodeName)
+	}
+	if conf.MaxHistoryNum != 0 {
+		executor.WithMaxHistoryNum(conf.MaxHistoryNum)
+	}
+	if conf.MaxOutputLength != 0 {
+		executor.WithMaxOutputLength(conf.MaxOutputLength)
+	}
+
+	cron := NewCron(entries, timeline, executor.Receiver())
 
 	return &Agent{
 		cron:     cron,
 		executor: executor,
 
-		addr: addr,
-		c:    make(chan os.Signal),
+		conf: conf,
+		stop: make(chan os.Signal),
 	}
 }
+
+func (a *Agent) Join(existing []string) { a.cron.entries.Join(existing) }
 
 func (a *Agent) Run() {
 	go a.executor.consume()
 	go a.cron.run()
+	go a.serveHTTP()
 
-	go func() {
-		log.Println("start admin http server", a.addr)
-		log.Fatalln(http.ListenAndServe(a.addr, ApiRouter(a)))
-	}()
-
-	signal.Notify(a.c, syscall.SIGINT)
-	s := <-a.c
-	log.Println("receive signal:", s)
+	signal.Notify(a.stop, syscall.SIGINT)
+	s := <-a.stop
+	Logger.Info("receive a signal ", s)
+	Logger.Info("begin to shutdown ", s)
 	a.close()
+}
+
+func (a *Agent) serveHTTP() {
+	Logger.Info("start admin http server ", a.conf.HTTPAddr)
+	Logger.Fatalln(http.ListenAndServe(a.conf.HTTPAddr, Router(a)))
 }
 
 func (a *Agent) close() {
@@ -77,7 +110,7 @@ func (a *Agent) close() {
 	a.executor.close()
 	a.cron.timeline.Close()
 	a.cron.entries.Close()
-
+	Logger.Info("agent shutdown gracefully")
 }
 
 func (a *Agent) RegisterJob(job Job) error {
@@ -140,7 +173,7 @@ func (a *Agent) Schedule() ([]EntryRecord, error) {
 	for i, event := range events {
 		results[i] = EntryRecord{
 			Name:      event.Name,
-			Next:      event.Time.Format("2006-01-02 15:04:05"),
+			Next:      event.Time.Format(DefaultTimeLayout),
 			Displayed: event.Displayed,
 		}
 		if e, ok := a.cron.entries.Get(event.Name); ok {
@@ -173,4 +206,43 @@ func (a *Agent) validate(jobName string) error {
 		return ErrJobNotSupport
 	}
 	return nil
+}
+
+type Conf struct {
+	// redis
+	RedisOptions redis.Options `json:"redis"`
+
+	// custom key
+	KeyTimeline string `json:"key_timeline"`
+	KeyEntry    string `json:"key_entry"`
+	KeyExecutor string `json:"key_executor"`
+
+	// executor
+	MaxHistoryNum   int64 `json:"max_history_num"`
+	MaxOutputLength int   `json:"max_output_length"`
+
+	// api
+	HTTPAddr string `json:"http_addr"`
+
+	// gossip cluster
+	GossipType string `json:"gossip_type"`
+	NodeName   string `json:"node_name"`
+	BindAddr   string `json:"bind_addr"`
+	BindPort   int    `json:"bind_port"`
+}
+
+func ParseConfig(file string) Conf {
+	f, err := os.Open(file)
+	if err != nil {
+		Logger.Fatalln(err)
+	}
+	defer f.Close()
+
+	conf := Conf{}
+	if err = json.NewDecoder(f).Decode(&conf); err != nil {
+		Logger.Fatalln(err)
+	}
+
+	Logger.Info("load config ok")
+	return conf
 }

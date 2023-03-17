@@ -54,7 +54,7 @@ func NewRedisTimeline(cli *redis.Client) Timeline {
 	}
 }
 
-func (r redisTimeline) WithKey(key string) { r.key = key }
+func (r redisTimeline) withKey(key string) { r.key = key }
 
 func (r redisTimeline) Remove(name string) error {
 	return r.cli.ZRem(context.Background(), r.key, name).Err()

@@ -140,28 +140,30 @@ func newJobsHandlerFunc(agent *Agent) http.HandlerFunc {
 	}
 }
 
-type Router struct {
-	mux *http.ServeMux
+type GroupRouter struct {
+	prefix string
+	mux    *http.ServeMux
 }
 
-func ApiRouter(agent *Agent) Router {
-	h := Router{mux: http.NewServeMux()}
-
-	h.mux.Handle("/api/v1/add", newAddHandlerFunc(agent))
-	h.mux.Handle("/api/v1/active", newActiveHandlerFunc(agent))
-	h.mux.Handle("/api/v1/pause", newPauseHandlerFunc(agent))
-	h.mux.Handle("/api/v1/remove", newRemoveHandlerFunc(agent))
-	h.mux.Handle("/api/v1/execute", newExecuteOnceHandlerFunc(agent))
-	h.mux.Handle("/api/v1/running", newRunningHandlerFunc(agent))
-	h.mux.Handle("/api/v1/schedule", newScheduleHandlerFunc(agent))
-	h.mux.Handle("/api/v1/history", newHistoryHandlerFunc(agent))
-	h.mux.Handle("/api/v1/jobs", newJobsHandlerFunc(agent))
-
-	h.mux.Handle("/", admin.UIHandler())
-
-	return h
+func (g GroupRouter) RegisterHandler(pattern string, f http.HandlerFunc) {
+	g.mux.Handle(g.prefix+pattern, f)
 }
 
-func (h Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mux.ServeHTTP(w, r)
+func Router(agent *Agent) http.Handler {
+	mux := http.NewServeMux()
+
+	r := GroupRouter{prefix: "/api/v1", mux: mux}
+	r.RegisterHandler("/add", newAddHandlerFunc(agent))
+	r.RegisterHandler("/active", newActiveHandlerFunc(agent))
+	r.RegisterHandler("/pause", newPauseHandlerFunc(agent))
+	r.RegisterHandler("/remove", newRemoveHandlerFunc(agent))
+	r.RegisterHandler("/execute", newExecuteOnceHandlerFunc(agent))
+	r.RegisterHandler("/running", newRunningHandlerFunc(agent))
+	r.RegisterHandler("/schedule", newScheduleHandlerFunc(agent))
+	r.RegisterHandler("/history", newHistoryHandlerFunc(agent))
+	r.RegisterHandler("/jobs", newJobsHandlerFunc(agent))
+
+	mux.Handle("/", admin.UIHandler())
+
+	return mux
 }

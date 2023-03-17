@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -14,7 +12,7 @@ import (
 	"github.com/yinyajun/cron/store"
 )
 
-const MaxOutputLength = 1000
+const DefaultTimeLayout = "2006-01-02 15:04:05"
 
 type Execution struct {
 	ID         uuid.UUID `json:"id"`
@@ -30,13 +28,13 @@ func newExecution(name, node string) *Execution {
 	return &Execution{
 		ID:        uuid.New(),
 		Name:      name,
-		StartedAt: time.Now().Format("2006-01-02 15:04:05"),
+		StartedAt: time.Now().Format(DefaultTimeLayout),
 		Node:      node,
 	}
 }
 
 func (e *Execution) finishWith(output string, err error) {
-	e.FinishedAt = time.Now().Format("2006-01-02 15:04:05")
+	e.FinishedAt = time.Now().Format(DefaultTimeLayout)
 	if err == nil {
 		e.Output = output
 		e.Success = true
@@ -59,19 +57,17 @@ type Executor struct {
 	history store.List
 	running store.Set
 
-	maxHistoryNum int64
-	keyExecution  string
-	keyHistory    string
-	keyRunning    string
+	maxHistoryNum  int64
+	maxOutputLimit int
+	keyPrefix      string
 
 	mu sync.RWMutex
 	wg sync.WaitGroup
 }
 
-func NewExecutor(cli *redis.Client) *Executor {
-	hostname, _ := os.Hostname()
+func NewExecutor(cli *redis.Client, node string) *Executor {
 	e := &Executor{
-		node:     hostname,
+		node:     node,
 		receiver: make(chan string),
 		jobs:     make(map[string]Job),
 
@@ -79,16 +75,18 @@ func NewExecutor(cli *redis.Client) *Executor {
 		history: store.NewRedisList(cli),
 		running: store.NewRedisSet(cli),
 
-		maxHistoryNum: 4,
-		keyExecution:  "_exe",
-		keyHistory:    "_exe_hist",
-		keyRunning:    "_exe_running",
+		maxHistoryNum:  5,
+		maxOutputLimit: 1000,
+		keyPrefix:      "_exe",
 	}
 
 	return e
 }
 
-func (f *Executor) WithNode(node string) { f.node = node }
+func (f *Executor) WithNode(node string)      { f.node = node }
+func (f *Executor) WithKeyPrefix(key string)  { f.keyPrefix = key }
+func (f *Executor) WithMaxHistoryNum(n int64) { f.maxHistoryNum = n }
+func (f *Executor) WithMaxOutputLength(n int) { f.maxOutputLimit = n }
 
 func (f *Executor) Receiver() chan string { return f.receiver }
 
@@ -123,7 +121,7 @@ func (f *Executor) Jobs() []string {
 }
 
 func (f *Executor) Running() ([]Execution, error) {
-	ids, err := f.running.SRange(f.keyRunning)
+	ids, err := f.running.SRange(f.keyPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -141,10 +139,7 @@ func (f *Executor) History(jobName string) ([]Execution, error) {
 	return f.fetchExecutions(ids), nil
 }
 
-func (f *Executor) close() {
-	f.wg.Wait()
-	log.Println("executor closed")
-}
+func (f *Executor) close() { f.wg.Wait() }
 
 func (f *Executor) consume() {
 	for name := range f.receiver {
@@ -183,8 +178,8 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 	}
 
 	output, err = job.Run(context)
-	if len(output) > MaxOutputLength {
-		output = output[:MaxOutputLength]
+	if len(output) > f.maxOutputLimit {
+		output = output[:f.maxOutputLimit]
 	}
 
 }
@@ -195,14 +190,14 @@ func (f *Executor) fetchExecutions(ids []string) []Execution {
 	for _, id := range ids {
 		ser, err := f.kv.Get(f.executionKey(id))
 		if err != nil {
-			// todo
+			Logger.Warnf("fetchExecutions failed: %s", id)
 			continue
 		}
 
 		var execution Execution
 
 		if err := json.Unmarshal([]byte(ser), &execution); err != nil {
-			// todo
+			Logger.Warnf("fetchExecutions failed: %s", id)
 			continue
 		}
 		executions = append(executions, execution)
@@ -220,11 +215,11 @@ func (f *Executor) clearExecution(id string) {
 }
 
 func (f *Executor) addToRunning(execution *Execution) {
-	f.running.SAdd(f.keyRunning, execution.ID.String())
+	f.running.SAdd(f.runningKey(), execution.ID.String())
 }
 
 func (f *Executor) remFromRunning(execution *Execution) {
-	f.running.SRem(f.keyRunning, execution.ID.String())
+	f.running.SRem(f.runningKey(), execution.ID.String())
 }
 
 func (f *Executor) updateHistory(execution *Execution) {
@@ -239,9 +234,13 @@ func (f *Executor) updateHistory(execution *Execution) {
 }
 
 func (f *Executor) historyKey(name string) string {
-	return f.keyHistory + "_" + name
+	return f.keyPrefix + "_hist_" + name
+}
+
+func (f *Executor) runningKey() string {
+	return f.keyPrefix + "_running"
 }
 
 func (f *Executor) executionKey(id string) string {
-	return f.keyExecution + "_" + id
+	return f.keyPrefix + "_" + id
 }
