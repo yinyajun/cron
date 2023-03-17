@@ -176,19 +176,28 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 }
 
 func (f *Executor) fetchExecutions(ids []string) []Execution {
-	var executions []Execution
+	var executions = make([]Execution, 0, len(ids))
 
-	for _, id := range ids {
-		ser, err := f.kv.Get(f.executionKey(id))
-		if err != nil {
-			Logger.Warnf("fetchExecutions failed: %s", id)
+	var keys = make([]string, len(ids))
+	for i, id := range ids {
+		keys[i] = f.executionKey(id)
+	}
+
+	res, err := f.kv.MGet(keys...)
+	if err != nil {
+		Logger.Errorf("fetchExecutions failed: %s", err.Error())
+	}
+
+	for i, r := range res {
+		ser, ok := r.(string)
+		if !ok {
+			Logger.Warn("fetchExecutions err", keys[i])
 			continue
 		}
-
 		var execution Execution
 
 		if err := json.Unmarshal([]byte(ser), &execution); err != nil {
-			Logger.Warnf("fetchExecutions failed: %s", id)
+			Logger.Warn("fetchExecutions err", keys[i])
 			continue
 		}
 		executions = append(executions, execution)

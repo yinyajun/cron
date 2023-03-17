@@ -2,9 +2,9 @@ package cron
 
 import (
 	"encoding/json"
-	"github.com/go-redis/redis/v8"
 	"sync"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
 	"github.com/yinyajun/cron/store"
 )
@@ -26,7 +26,6 @@ func NewGossipEntries(
 	cli *redis.Client,
 	config *memberlist.Config,
 ) *Entries {
-
 	entries := &Entries{
 		local: make(map[string]*Entry),
 		kv:    store.NewRedisKV(cli),

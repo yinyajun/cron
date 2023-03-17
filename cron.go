@@ -48,10 +48,6 @@ func NewCron(
 		Logger.Fatalln("cron init failed")
 	}
 
-	if err := c.restore(); err != nil {
-		Logger.Error("restore failed: ", err)
-	}
-
 	return c
 }
 
@@ -102,17 +98,30 @@ func (c *Cron) Remove(name string) error {
 	return nil
 }
 
-func (c *Cron) Pause(name string) error    { return c.timeline.Hide(name) }
-func (c *Cron) Activate(name string) error { return c.timeline.Display(name) }
+func (c *Cron) Pause(name string) error {
+	if err := c.timeline.Hide(name); err != nil {
+		return err
+	}
+	Logger.Info("pause:", name)
+	return nil
+}
+
+func (c *Cron) Activate(name string) error {
+	if err := c.timeline.Display(name); err != nil {
+		return err
+	}
+	Logger.Info("activate:", name)
+	return nil
+}
 
 func (c *Cron) Events() ([]store.Event, error) { return c.timeline.Events() }
 
 func (c *Cron) close() { c.stop <- struct{}{} }
 
-func (c *Cron) restore() error {
+func (c *Cron) restore() {
 	events, err := c.timeline.Events()
 	if err != nil {
-		return err
+		Logger.Error("restore ", err)
 	}
 
 	names := make([]string, len(events))
@@ -121,13 +130,14 @@ func (c *Cron) restore() error {
 	}
 
 	if err := c.entries.Restore(names); err != nil {
-		return err
+		Logger.Error("restore ", err)
 	}
 	Logger.Debugf("restore %d events from timeline", len(events))
-	return nil
 }
 
 func (c *Cron) run() {
+	c.restore()
+
 	var timer *time.Timer
 	now := time.Now()
 
