@@ -15,13 +15,13 @@ import (
 const DefaultTimeLayout = "2006-01-02 15:04:05"
 
 type Execution struct {
-	ID         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
-	StartedAt  string    `json:"started_at"`
-	FinishedAt string    `json:"finished_at"`
-	Node       string    `json:"node"`
-	Output     string    `json:"output"`
-	Success    bool      `json:"success"`
+	ID         uuid.UUID   `json:"id"`
+	Name       string      `json:"name"`
+	StartedAt  string      `json:"started_at"`
+	FinishedAt string      `json:"finished_at"`
+	Node       string      `json:"node"`
+	Result     interface{} `json:"result"`
+	Success    bool        `json:"success"`
 }
 
 func newExecution(name, node string) *Execution {
@@ -33,19 +33,20 @@ func newExecution(name, node string) *Execution {
 	}
 }
 
-func (e *Execution) finishWith(output string, err error) {
+func (e *Execution) finishWith(result interface{}, err error) {
 	e.FinishedAt = time.Now().Format(DefaultTimeLayout)
 	if err == nil {
-		e.Output = output
+		e.Result = result
 		e.Success = true
 		return
 	}
-	e.Output = fmt.Sprintf("Error: %s", err.Error())
+	e.Result = fmt.Sprintf("Error: %s", err.Error())
 }
 
 type Job interface {
 	Name() string
-	Run(context.Context) (output string, err error)
+	Owner() string
+	Run(context.Context) (result interface{}, err error)
 }
 
 type Executor struct {
@@ -74,19 +75,13 @@ func NewExecutor(cli *redis.Client, node string) *Executor {
 		kv:      store.NewRedisKV(cli),
 		history: store.NewRedisList(cli),
 		running: store.NewRedisSet(cli),
-
-		maxHistoryNum:  5,
-		maxOutputLimit: 1000,
-		keyPrefix:      "_exe",
 	}
 
 	return e
 }
 
-func (f *Executor) WithNode(node string)      { f.node = node }
 func (f *Executor) WithKeyPrefix(key string)  { f.keyPrefix = key }
 func (f *Executor) WithMaxHistoryNum(n int64) { f.maxHistoryNum = n }
-func (f *Executor) WithMaxOutputLength(n int) { f.maxOutputLimit = n }
 
 func (f *Executor) Receiver() chan string { return f.receiver }
 
@@ -158,7 +153,7 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 	f.updateHistory(execution)
 
 	var (
-		output string
+		result interface{}
 		err    error
 	)
 
@@ -167,7 +162,7 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 	f.mu.RUnlock()
 
 	defer func() {
-		execution.finishWith(output, err)
+		execution.finishWith(result, err)
 		f.updateExecution(execution)
 		f.remFromRunning(execution)
 	}()
@@ -177,11 +172,7 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 		return
 	}
 
-	output, err = job.Run(context)
-	if len(output) > f.maxOutputLimit {
-		output = output[:f.maxOutputLimit]
-	}
-
+	result, err = job.Run(context)
 }
 
 func (f *Executor) fetchExecutions(ids []string) []Execution {

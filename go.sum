@@ -83,10 +83,6 @@ github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXf
 github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/yinyajun/cron-admin v0.0.0-20230316152830-98cdbf43954e h1:zgWl5JpthJoa9c6SsephVyn2qAtZgjuj/NVe1QMx91o=
-github.com/yinyajun/cron-admin v0.0.0-20230316152830-98cdbf43954e/go.mod h1:tnFaBJeDiCZXCm5DSUP/nf1Cl5Vtzvy/JHlDtqhx0gI=
-github.com/yinyajun/cron-admin v0.0.0-20230317051456-b107965c0b8a h1:qr7lKu41zJQQQnBbYfl1kVfTL6xbR72vfNjfMrErZ4Q=
-github.com/yinyajun/cron-admin v0.0.0-20230317051456-b107965c0b8a/go.mod h1:tnFaBJeDiCZXCm5DSUP/nf1Cl5Vtzvy/JHlDtqhx0gI=
 github.com/yinyajun/cron-admin v0.0.0-20230317144816-c6a6ba283eac h1:9irKoVn07ozjRlIgRDsGD5Afrk9M7XKvDG8dTTQ+qIg=
 github.com/yinyajun/cron-admin v0.0.0-20230317144816-c6a6ba283eac/go.mod h1:tnFaBJeDiCZXCm5DSUP/nf1Cl5Vtzvy/JHlDtqhx0gI=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

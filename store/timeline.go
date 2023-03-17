@@ -47,14 +47,12 @@ type redisTimeline struct {
 	cli *redis.Client
 }
 
-func NewRedisTimeline(cli *redis.Client) Timeline {
+func NewRedisTimeline(cli *redis.Client, key string) Timeline {
 	return &redisTimeline{
 		cli: cli,
-		key: "timeline",
+		key: key,
 	}
 }
-
-func (r redisTimeline) withKey(key string) { r.key = key }
 
 func (r redisTimeline) Remove(name string) error {
 	return r.cli.ZRem(context.Background(), r.key, name).Err()

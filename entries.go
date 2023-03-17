@@ -28,9 +28,8 @@ func NewGossipEntries(
 ) *Entries {
 
 	entries := &Entries{
-		keyPrefix: "_entries",
-		local:     make(map[string]*Entry),
-		kv:        store.NewRedisKV(cli),
+		local: make(map[string]*Entry),
+		kv:    store.NewRedisKV(cli),
 	}
 
 	config.Delegate = entries

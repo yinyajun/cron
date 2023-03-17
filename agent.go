@@ -2,7 +2,6 @@ package cron
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -29,59 +28,46 @@ type EntryRecord struct {
 type Agent struct {
 	cron     *Cron
 	executor *Executor
+	server   http.Server
 
-	conf Conf
 	stop chan os.Signal
 }
 
-func NewAgent(conf Conf) *Agent {
-	cli := redis.NewClient(&conf.RedisOptions)
+func NewAgent(conf *Conf) *Agent {
+	cli := redis.NewClient(&conf.Base.RedisOptions)
 
-	// gossip conf
+	// gossip
 	gossipConf := memberlist.DefaultLANConfig()
-	if conf.GossipType == "Local" {
+	if conf.Gossip.Network == "Local" {
 		gossipConf = memberlist.DefaultLocalConfig()
 	}
-	if conf.GossipType == "WAN" {
+	if conf.Gossip.Network == "WAN" {
 		gossipConf = memberlist.DefaultWANConfig()
 	}
-	if conf.BindAddr != "" {
-		gossipConf.BindAddr = conf.BindAddr
-	}
-	if conf.BindPort != 0 {
-		gossipConf.BindPort = conf.BindPort
-	}
-	gossipConf.Name = conf.NodeName
+	gossipConf.BindAddr = conf.Gossip.BindAddr
+	gossipConf.BindPort = conf.Gossip.BindPort
+	gossipConf.Name = conf.Gossip.NodeName
 
-	timeline := store.NewRedisTimeline(cli)
+	timeline := store.NewRedisTimeline(cli, conf.Custom.KeyTimeline)
 	entries := NewGossipEntries(cli, gossipConf)
-	executor := NewExecutor(cli, conf.NodeName)
-
-	// apply other conf
-	if conf.KeyEntry != "" {
-		entries.WithKeyPrefix(conf.KeyEntry)
-	}
-	if conf.NodeName != "" {
-		executor.WithNode(conf.NodeName)
-	}
-	if conf.MaxHistoryNum != 0 {
-		executor.WithMaxHistoryNum(conf.MaxHistoryNum)
-	}
-	if conf.MaxOutputLength != 0 {
-		executor.WithMaxOutputLength(conf.MaxOutputLength)
-	}
-
+	executor := NewExecutor(cli, entries.list.LocalNode().Name)
 	cron := NewCron(entries, timeline, executor.Receiver())
+
+	// custom
+	entries.WithKeyPrefix(conf.Custom.KeyEntry)
+	executor.WithKeyPrefix(conf.Custom.KeyExecutor)
+	executor.WithMaxHistoryNum(conf.Custom.MaxHistoryNum)
 
 	return &Agent{
 		cron:     cron,
 		executor: executor,
+		server:   http.Server{Addr: conf.Base.HTTPAddr},
 
-		conf: conf,
 		stop: make(chan os.Signal),
 	}
 }
 
+// Join must call before Run()
 func (a *Agent) Join(existing []string) { a.cron.entries.Join(existing) }
 
 func (a *Agent) Run() {
@@ -91,30 +77,40 @@ func (a *Agent) Run() {
 
 	signal.Notify(a.stop, syscall.SIGINT)
 	s := <-a.stop
-	Logger.Info("receive a signal ", s)
-	Logger.Info("begin to shutdown ", s)
+	Logger.Infof("receive a signal %s, begin to shutdown...", s.String())
 	a.close()
 }
 
-func (a *Agent) serveHTTP() {
-	Logger.Info("start admin http server ", a.conf.HTTPAddr)
-	Logger.Fatalln(http.ListenAndServe(a.conf.HTTPAddr, Router(a)))
+func (a *Agent) Register(jobs ...Job) error {
+	for _, job := range jobs {
+		if err := a.register(job); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (a *Agent) close() {
-	a.cron.close()
-	a.executor.close()
-	a.cron.timeline.Close()
-	a.cron.entries.Close()
-	Logger.Info("agent shutdown gracefully")
-}
-
-func (a *Agent) RegisterJob(job Job) error {
+func (a *Agent) register(job Job) error {
 	if job.Name() == "" {
 		return ErrJobNameEmpty
 	}
 	a.executor.Register(job)
 	return nil
+}
+
+func (a *Agent) serveHTTP() {
+	a.server.Handler = Router(a)
+	Logger.Info("start admin http server: ", a.server.Addr)
+	Logger.Info(a.server.ListenAndServe())
+}
+
+func (a *Agent) close() {
+	a.server.Close()
+	a.cron.close()
+	a.executor.close()
+	a.cron.timeline.Close()
+	a.cron.entries.Close()
+	Logger.Info("agent shutdown gracefully")
 }
 
 func (a *Agent) Add(spec, jobName string) error {
@@ -194,6 +190,10 @@ func (a *Agent) Jobs() []string {
 	return a.executor.Jobs()
 }
 
+func (a *Agent) Members() []*memberlist.Node {
+	return a.cron.entries.list.Members()
+}
+
 func (a *Agent) validate(jobName string) error {
 	if jobName == "" {
 		return ErrJobNameEmpty
@@ -202,55 +202,4 @@ func (a *Agent) validate(jobName string) error {
 		return ErrJobNotSupport
 	}
 	return nil
-}
-
-type Conf struct {
-	// redis
-	RedisOptions redis.Options `json:"redis"`
-
-	// custom key
-	KeyTimeline string `json:"key_timeline"`
-	KeyEntry    string `json:"key_entry"`
-	KeyExecutor string `json:"key_executor"`
-
-	// executor
-	MaxHistoryNum   int64 `json:"max_history_num"`
-	MaxOutputLength int   `json:"max_output_length"`
-
-	// api
-	HTTPAddr string `json:"http_addr"`
-
-	// gossip cluster
-	GossipType string `json:"gossip_type"`
-	NodeName   string `json:"node_name"`
-	BindAddr   string `json:"bind_addr"`
-	BindPort   int    `json:"bind_port"`
-}
-
-func ParseConfig(file string) *Conf {
-	conf := &Conf{}
-	defer func() {
-		if conf.NodeName == "" {
-			hostname, _ := os.Hostname()
-			conf.NodeName = hostname
-		}
-		if conf.HTTPAddr == "" {
-			conf.HTTPAddr = ":8080"
-		}
-	}()
-
-	f, err := os.Open(file)
-	if err != nil {
-		Logger.Error("ParseConfig ", err)
-		return conf
-	}
-	defer f.Close()
-
-	if err = json.NewDecoder(f).Decode(&conf); err != nil {
-		Logger.Error("ParseConfig ", err)
-		return conf
-	}
-
-	Logger.Info("load config ok")
-	return conf
 }

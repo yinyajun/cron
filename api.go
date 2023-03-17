@@ -2,10 +2,20 @@ package cron
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/yinyajun/cron-admin"
+)
+
+const (
+	ErrCodeAdd      = 1000
+	ErrCodeActive   = 1001
+	ErrCodePause    = 1002
+	ErrCodeRemove   = 1003
+	ErrCodeExecute  = 1004
+	ErrCodeSchedule = 1005
+	ErrCodeRunning  = 1006
+	ErrCodeHistory  = 1007
 )
 
 func renderJson(w http.ResponseWriter, data interface{}) {
@@ -42,7 +52,7 @@ func newAddHandlerFunc(agent *Agent) http.HandlerFunc {
 		spec := query.Get("spec")
 		job := query.Get("job")
 		if err := agent.Add(spec, job); err != nil {
-			renderErrJson(w, 1000, err.Error())
+			renderErrJson(w, ErrCodeAdd, err.Error())
 			return
 		}
 		renderJson(w, "ok")
@@ -54,10 +64,9 @@ func newActiveHandlerFunc(agent *Agent) http.HandlerFunc {
 		query := r.URL.Query()
 		job := query.Get("job")
 		if err := agent.Active(job); err != nil {
-			renderErrJson(w, 1001, err.Error())
+			renderErrJson(w, ErrCodeActive, err.Error())
 			return
 		}
-		fmt.Println(">>", "active", job)
 		renderJson(w, "ok")
 	}
 }
@@ -67,10 +76,9 @@ func newPauseHandlerFunc(agent *Agent) http.HandlerFunc {
 		query := r.URL.Query()
 		job := query.Get("job")
 		if err := agent.Pause(job); err != nil {
-			renderErrJson(w, 1002, err.Error())
+			renderErrJson(w, ErrCodePause, err.Error())
 			return
 		}
-		fmt.Println(">>", "pause", job)
 		renderJson(w, "ok")
 	}
 }
@@ -80,7 +88,7 @@ func newRemoveHandlerFunc(agent *Agent) http.HandlerFunc {
 		query := r.URL.Query()
 		job := query.Get("job")
 		if err := agent.Remove(job); err != nil {
-			renderErrJson(w, 1003, err.Error())
+			renderErrJson(w, ErrCodeRemove, err.Error())
 			return
 		}
 		renderJson(w, "ok")
@@ -92,7 +100,7 @@ func newExecuteOnceHandlerFunc(agent *Agent) http.HandlerFunc {
 		query := r.URL.Query()
 		job := query.Get("job")
 		if err := agent.ExecuteOnce(job); err != nil {
-			renderErrJson(w, 1004, err.Error())
+			renderErrJson(w, ErrCodeExecute, err.Error())
 			return
 		}
 		renderJson(w, "ok")
@@ -103,7 +111,7 @@ func newScheduleHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		events, err := agent.Schedule()
 		if err != nil {
-			renderErrJson(w, 1005, err.Error())
+			renderErrJson(w, ErrCodeSchedule, err.Error())
 			return
 		}
 		renderJson(w, events)
@@ -114,7 +122,7 @@ func newRunningHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		executions, err := agent.Running()
 		if err != nil {
-			renderErrJson(w, 1006, err.Error())
+			renderErrJson(w, ErrCodeRunning, err.Error())
 			return
 		}
 		renderJson(w, executions)
@@ -127,7 +135,7 @@ func newHistoryHandlerFunc(agent *Agent) http.HandlerFunc {
 		job := query.Get("job")
 		executions, err := agent.History(job)
 		if err != nil {
-			renderErrJson(w, 1007, err.Error())
+			renderErrJson(w, ErrCodeHistory, err.Error())
 			return
 		}
 		renderJson(w, executions)
@@ -137,6 +145,12 @@ func newHistoryHandlerFunc(agent *Agent) http.HandlerFunc {
 func newJobsHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		renderJson(w, agent.Jobs())
+	}
+}
+
+func newMembersHandlerFunc(agent *Agent) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		renderJson(w, agent.Members())
 	}
 }
 
@@ -162,6 +176,7 @@ func Router(agent *Agent) http.Handler {
 	r.RegisterHandler("/schedule", newScheduleHandlerFunc(agent))
 	r.RegisterHandler("/history", newHistoryHandlerFunc(agent))
 	r.RegisterHandler("/jobs", newJobsHandlerFunc(agent))
+	r.RegisterHandler("/members", newJobsHandlerFunc(agent))
 
 	mux.Handle("/", admin.UIHandler())
 
