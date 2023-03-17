@@ -1,90 +1,62 @@
 # cron
-cron is a simple cron go library
+cron is a simple distributed cron service, you can import it as as library in your application.
 
-## diagram
-<img src="./doc/cron.png" alt="diagram" style="zoom: 50%;" />
+## Framework
+<img src="./doc/cron.png" alt="diagram" style="zoom: 33%;" />
 
-## usage
+## Usage
 
 ```golang
-config := memberlist.DefaultLANConfig()
-config.Name = fmt.Sprintf("node_%d", port)
-config.BindPort = *port
-config.AdvertisePort = *port
+func main() {
+	conf := cron.ParseConfig(*config)
+	agent := cron.NewAgent(conf)
+	agent.Join(strings.Split(*nodes, ","))
 
-cli := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+	registerJob(agent)
 
-agent := cron.NewAgent(
-    cli,
-    strings.Split(*nodes, ","),
-    config,
-    logger,
-)
-
-agent.AddJob(job{a: "t1"})
-agent.AddJob(job{a: "t2"})
-agent.AddJob(job{a: "t3"})
-
-agent.Run()
-
-agent.Add("@every 5s", "t1")
-agent.Active("t1")
-agent.Add("@every 8s", "t2")
-agent.Active("t2")
+	agent.Run()
+}
 ```
 
-`go run examples/main.go --port=8001 --nodes='127.0.0.1:8001,127.0.0.1:8002'`
 
-```shell
-2023/03/09 21:10:52 [DEBUG] memberlist: Initiating push/pull sync with:  127.0.0.1:8001
-2023/03/09 21:10:52 [DEBUG] memberlist: Stream connection from=127.0.0.1:55346
-2023/03/09 21:10:52 [DEBUG] memberlist: Failed to join 127.0.0.1:8002: dial tcp 127.0.0.1:8002: connect: connection refused
-DEBU[2023-03-09T21:10:52+08:00] restore 0 events from timeline
-DEBU[2023-03-09T21:10:52+08:00] add: {"name":"t1","spec":"@every 5s"}
-DEBU[2023-03-09T21:10:52+08:00] add: {"name":"t2","spec":"@every 8s"}
-INFO[2023-03-09T21:10:52+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-INFO[2023-03-09T21:10:52+08:00] dispense: {"name":"t2","spec":"@every 8s"}
-run t1
-run t2
-2023/03/09 21:10:53 [DEBUG] memberlist: Stream connection from=127.0.0.1:55354
-INFO[2023-03-09T21:10:58+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-INFO[2023-03-09T21:11:03+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-INFO[2023-03-09T21:11:08+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-INFO[2023-03-09T21:11:09+08:00] dispense: {"name":"t2","spec":"@every 8s"}
-run t2
-INFO[2023-03-09T21:11:13+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-INFO[2023-03-09T21:11:17+08:00] dispense: {"name":"t2","spec":"@every 8s"}
-run t2
+
+## Run Example
+
+```
+cd examples
+go run main.go
+```
 
 
 ```
-
-`go run examples/main.go --port=8002 --nodes='127.0.0.1:8001,127.0.0.1:8002'`
-
-```shell
-2023/03/09 21:10:53 [DEBUG] memberlist: Initiating push/pull sync with:  127.0.0.1:8001
-2023/03/09 21:10:53 [DEBUG] memberlist: Initiating push/pull sync with:  127.0.0.1:8002
-2023/03/09 21:10:53 [DEBUG] memberlist: Stream connection from=127.0.0.1:55355
-DEBU[2023-03-09T21:10:53+08:00] restore 2 events from timeline
-DEBU[2023-03-09T21:10:53+08:00] add: {"name":"t1","spec":"@every 5s"}
-DEBU[2023-03-09T21:10:53+08:00] add: {"name":"t2","spec":"@every 8s"}
-INFO[2023-03-09T21:10:53+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-INFO[2023-03-09T21:10:53+08:00] dispense: {"name":"t2","spec":"@every 8s"}
-run t1
-run t2
-INFO[2023-03-09T21:11:01+08:00] dispense: {"name":"t2","spec":"@every 8s"}
-run t2
-INFO[2023-03-09T21:11:23+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-INFO[2023-03-09T21:11:25+08:00] dispense: {"name":"t2","spec":"@every 8s"}
-run t2
-INFO[2023-03-09T21:11:28+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-INFO[2023-03-09T21:11:33+08:00] dispense: {"name":"t1","spec":"@every 5s"}
-run t1
-
+INFO[2023-03-17T17:50:05+08:00] load config ok
+DEBU[2023-03-17T17:50:05+08:00] restore 0 events from timeline
+2023/03/17 17:50:05 [DEBUG] memberlist: Initiating push/pull sync with:  127.0.0.1:7946
+2023/03/17 17:50:05 [DEBUG] memberlist: Stream connection from=127.0.0.1:60697
+INFO[2023-03-17T17:50:05+08:00] start admin http server :8080
 ```
+
+
+
+## Config
+
+you can use `--conf=conf.json`  to load config. 
+
+| Key               | Default       | explain                                        |
+| ----------------- | ------------- | ---------------------------------------------- |
+| redis             | redis.Options |                                                |
+| key_timeline      | timeline      | custom timeline key in redis                   |
+| key_entry         | _entries      | custom entry key in redis                      |
+| key_executor      | _exe          | custom executor key in redis                   |
+| max_history_num   | 5             | maximum  number of history for each job        |
+| max_output_length | 1000          | maximum output length of each execution of job |
+| http_addr         | :8080         |                                                |
+| gossip_type       | LAN           | gossip network type                            |
+| node_name         | $hostname     |                                                |
+
+
+
+## WebUI
+
+![ui](doc/ui.png)
+

@@ -51,10 +51,6 @@ func NewAgent(conf Conf) *Agent {
 	if conf.BindPort != 0 {
 		gossipConf.BindPort = conf.BindPort
 	}
-	if conf.NodeName == "" {
-		hostname, _ := os.Hostname()
-		conf.NodeName = hostname
-	}
 	gossipConf.Name = conf.NodeName
 
 	timeline := store.NewRedisTimeline(cli)
@@ -234,13 +230,24 @@ type Conf struct {
 func ParseConfig(file string) Conf {
 	f, err := os.Open(file)
 	if err != nil {
-		Logger.Fatalln(err)
+		Logger.Error("ParseConfig ", err)
+		return Conf{}
 	}
 	defer f.Close()
 
 	conf := Conf{}
 	if err = json.NewDecoder(f).Decode(&conf); err != nil {
-		Logger.Fatalln(err)
+		Logger.Error("ParseConfig ", err)
+		return Conf{}
+	}
+
+	if conf.NodeName == "" {
+		hostname, _ := os.Hostname()
+		conf.NodeName = hostname
+	}
+
+	if conf.HTTPAddr == "" {
+		conf.HTTPAddr = ":8080"
 	}
 
 	Logger.Info("load config ok")
