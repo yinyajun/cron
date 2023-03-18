@@ -89,18 +89,18 @@ Agent comes with a set of default configuration.
 
 ## API
 
-| Url              | Explaination                          |
-| ---------------- | ------------------------------------- |
-| /api/v1/add      | Add a job schedule                    |
-| /api/v1/active   | Active the job schedule               |
-| /api/v1/pause    | Pause the job schedule                |
-| /api/v1/remove   | Remove the job schedule               |
-| /api/v1/execute  | Execute the job immediately           |
-| /api/v1/running  | Fetch the running execution           |
-| /api/v1/schedule | Fetch all schedule                    |
-| /api/v1/history  | Fetch the history executions of a job |
-| /api/v1/jobs     | Fetch all supported jobs              |
-| /api/v1/members  | Fetch cron members                    |
+| Url                | Explaination                          |
+| ------------------ | ------------------------------------- |
+| `/api/v1/add`      | Add a job schedule                    |
+| `/api/v1/active`   | Active the job schedule               |
+| `/api/v1/pause`    | Pause the job schedule                |
+| `/api/v1/remove`   | Remove the job schedule               |
+| `/api/v1/execute`  | Execute the job immediately           |
+| `/api/v1/running`  | Fetch the running execution           |
+| `/api/v1/schedule` | Fetch all schedule                    |
+| `/api/v1/history`  | Fetch the history executions of a job |
+| `/api/v1/jobs`     | Fetch all supported jobs              |
+| `/api/v1/members`  | Fetch cron members                    |
 
 
 
