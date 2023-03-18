@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
-	"github.com/yinyajun/cron/store"
 )
 
 type Entry struct {
@@ -23,7 +22,7 @@ func (e Entry) String() string {
 
 type Cron struct {
 	entries  *Entries
-	timeline store.Timeline
+	timeline Timeline
 
 	actionCh    chan Action
 	executionCh chan<- string
@@ -32,7 +31,7 @@ type Cron struct {
 
 func NewCron(
 	entries *Entries,
-	timeline store.Timeline,
+	timeline Timeline,
 	result chan<- string) *Cron {
 
 	c := &Cron{
@@ -57,7 +56,7 @@ func (c *Cron) Add(spec string, name string) error {
 		return err
 	}
 
-	event := store.Event{
+	event := Event{
 		Name:      name,
 		Time:      time.Now(),
 		Displayed: false, // note: default state is paused
@@ -115,7 +114,7 @@ func (c *Cron) Activate(name string) error {
 	return nil
 }
 
-func (c *Cron) Events() ([]store.Event, error) { return c.timeline.Events() }
+func (c *Cron) Events() ([]Event, error) { return c.timeline.Events() }
 
 func (c *Cron) close() { c.stop <- struct{}{} }
 

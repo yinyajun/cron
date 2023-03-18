@@ -1,25 +1,25 @@
 package cron
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
-	"github.com/yinyajun/cron/store"
 )
 
 var _ memberlist.Delegate = (*Entries)(nil)
 
 type Entries struct {
-	mu sync.RWMutex
+	cli *redis.Client
 
-	keyPrefix string
-
-	kv    store.KV
+	mu    sync.RWMutex
 	local map[string]*Entry
 	list  *memberlist.Memberlist
 	q     *memberlist.TransmitLimitedQueue
+
+	keyPrefix string
 }
 
 func NewGossipEntries(
@@ -27,8 +27,8 @@ func NewGossipEntries(
 	config *memberlist.Config,
 ) *Entries {
 	entries := &Entries{
+		cli:   cli,
 		local: make(map[string]*Entry),
-		kv:    store.NewRedisKV(cli),
 	}
 
 	config.Delegate = entries
@@ -173,7 +173,8 @@ func (s *Entries) Broadcast(u Action) {
 func (s *Entries) Restore(names []string) error {
 	for _, name := range names {
 		e := &Entry{}
-		ser, err := s.kv.Get(s.backupKey(name))
+
+		ser, err := s.cli.Get(context.Background(), s.backupKey(name)).Result()
 		if err != nil {
 			return err
 		}
@@ -195,10 +196,10 @@ func (s *Entries) Backup(u Action) error {
 		if err != nil {
 			return err
 		}
-		return s.kv.SetEx(s.backupKey(u.Entry.Name), ser, 0)
+		return s.cli.Set(context.Background(), s.backupKey(u.Entry.Name), ser, 0).Err()
 
 	case removeType:
-		return s.kv.Del(s.backupKey(u.Entry.Name))
+		return s.cli.Del(context.Background(), s.backupKey(u.Entry.Name)).Err()
 	}
 	return nil
 }

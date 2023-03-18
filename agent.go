@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/hashicorp/memberlist"
-	"github.com/yinyajun/cron/store"
 )
 
 var (
@@ -41,7 +40,7 @@ func NewAgent(conf *Conf) *Agent {
 	gossipConf.BindPort = conf.Gossip.BindPort
 	gossipConf.Name = conf.Gossip.NodeName
 
-	timeline := store.NewRedisTimeline(cli, conf.Custom.KeyTimeline)
+	timeline := NewRedisTimeline(cli, conf.Custom.KeyTimeline)
 	entries := NewGossipEntries(cli, gossipConf)
 	executor := NewExecutor(cli, entries.list.LocalNode().Name)
 	cron := NewCron(entries, timeline, executor.Receiver())
@@ -92,7 +91,7 @@ func (a *Agent) register(job Job) error {
 }
 
 func (a *Agent) serveHTTP() {
-	a.server.Handler = Router(a)
+	a.server.Handler = a.Router()
 	Logger.Info("start admin http server: ", a.server.Addr)
 	Logger.Info(a.server.ListenAndServe())
 }
@@ -173,11 +172,13 @@ func (a *Agent) Running() ([]Execution, error) {
 	return a.executor.Running()
 }
 
-func (a *Agent) History(jobName string) ([]Execution, error) {
+func (a *Agent) History(jobName string, offset, size int64) ([]Execution, int64, error) {
+	total := a.executor.maxHistoryNum
 	if jobName == "" {
-		return nil, ErrJobNameEmpty
+		return nil, total, ErrJobNameEmpty
 	}
-	return a.executor.History(jobName)
+	executions, err := a.executor.History(jobName, offset, size)
+	return executions, total, err
 }
 
 func (a *Agent) Jobs() []string {

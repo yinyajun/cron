@@ -3,6 +3,7 @@ package cron
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/yinyajun/cron-admin"
 )
@@ -133,12 +134,17 @@ func newHistoryHandlerFunc(agent *Agent) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		job := query.Get("job")
-		executions, err := agent.History(job)
+		offset, _ := strconv.ParseInt(query.Get("offset"), 10, 64)
+		size, _ := strconv.ParseInt(query.Get("size"), 10, 64)
+		executions, total, err := agent.History(job, offset, size)
 		if err != nil {
 			renderErrJson(w, ErrCodeHistory, err.Error())
 			return
 		}
-		renderJson(w, executions)
+		renderJson(w, map[string]interface{}{
+			"executions": executions,
+			"total":      total,
+		})
 	}
 }
 
@@ -163,20 +169,20 @@ func (g GroupRouter) RegisterHandler(pattern string, f http.HandlerFunc) {
 	g.mux.Handle(g.prefix+pattern, f)
 }
 
-func Router(agent *Agent) http.Handler {
+func (a *Agent) Router() http.Handler {
 	mux := http.NewServeMux()
 
 	r := GroupRouter{prefix: "/api/v1", mux: mux}
-	r.RegisterHandler("/add", newAddHandlerFunc(agent))
-	r.RegisterHandler("/active", newActiveHandlerFunc(agent))
-	r.RegisterHandler("/pause", newPauseHandlerFunc(agent))
-	r.RegisterHandler("/remove", newRemoveHandlerFunc(agent))
-	r.RegisterHandler("/execute", newExecuteOnceHandlerFunc(agent))
-	r.RegisterHandler("/running", newRunningHandlerFunc(agent))
-	r.RegisterHandler("/schedule", newScheduleHandlerFunc(agent))
-	r.RegisterHandler("/history", newHistoryHandlerFunc(agent))
-	r.RegisterHandler("/jobs", newJobsHandlerFunc(agent))
-	r.RegisterHandler("/members", newMembersHandlerFunc(agent))
+	r.RegisterHandler("/add", newAddHandlerFunc(a))
+	r.RegisterHandler("/active", newActiveHandlerFunc(a))
+	r.RegisterHandler("/pause", newPauseHandlerFunc(a))
+	r.RegisterHandler("/remove", newRemoveHandlerFunc(a))
+	r.RegisterHandler("/execute", newExecuteOnceHandlerFunc(a))
+	r.RegisterHandler("/running", newRunningHandlerFunc(a))
+	r.RegisterHandler("/schedule", newScheduleHandlerFunc(a))
+	r.RegisterHandler("/history", newHistoryHandlerFunc(a))
+	r.RegisterHandler("/jobs", newJobsHandlerFunc(a))
+	r.RegisterHandler("/members", newMembersHandlerFunc(a))
 
 	mux.Handle("/", admin.UIHandler())
 

@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"github.com/yinyajun/cron/store"
 )
 
 type Execution struct {
@@ -20,15 +19,6 @@ type Execution struct {
 	Node       string      `json:"node"`
 	Result     interface{} `json:"result"`
 	Success    bool        `json:"success"`
-}
-
-func newExecution(name, node string) *Execution {
-	return &Execution{
-		ID:        uuid.New(),
-		Name:      name,
-		StartedAt: time.Now().Unix() * 1000,
-		Node:      node,
-	}
 }
 
 func (e *Execution) finishWith(result interface{}, err error) {
@@ -47,34 +37,37 @@ type Job interface {
 }
 
 type Executor struct {
+	cli *redis.Client
+	mu  sync.RWMutex
+	wg  sync.WaitGroup
+
 	node     string
 	receiver chan string
 	jobs     map[string]Job
 
-	kv      store.KV
-	history store.List
-	running store.Set
-
-	maxHistoryNum  int64
-	maxOutputLimit int
-	keyPrefix      string
-
-	mu sync.RWMutex
-	wg sync.WaitGroup
+	maxHistoryNum int64
+	keyPrefix     string
 }
 
 func NewExecutor(cli *redis.Client, node string) *Executor {
 	e := &Executor{
+		cli: cli,
+
 		node:     node,
 		receiver: make(chan string),
 		jobs:     make(map[string]Job),
-
-		kv:      store.NewRedisKV(cli),
-		history: store.NewRedisList(cli),
-		running: store.NewRedisSet(cli),
 	}
 
 	return e
+}
+
+func (f *Executor) newExecution(name string) *Execution {
+	return &Execution{
+		ID:        uuid.New(),
+		Name:      name,
+		StartedAt: time.Now().Unix() * 1000,
+		Node:      f.node,
+	}
 }
 
 func (f *Executor) WithKeyPrefix(key string)  { f.keyPrefix = key }
@@ -113,21 +106,19 @@ func (f *Executor) Jobs() []string {
 }
 
 func (f *Executor) Running() ([]Execution, error) {
-	ids, err := f.running.SRange(f.runningKey())
+	ids, err := f.cli.SMembers(context.Background(), f.runningKey()).Result()
 	if err != nil {
 		return nil, err
 	}
-
 	return f.fetchExecutions(ids), nil
 }
 
-func (f *Executor) History(jobName string) ([]Execution, error) {
-	key := f.historyKey(jobName)
-	ids, err := f.history.LRange(key)
+func (f *Executor) History(jobName string, offset, size int64) ([]Execution, error) {
+	ids, err := f.cli.LRange(context.Background(),
+		f.historyKey(jobName), offset, offset+size-1).Result()
 	if err != nil {
 		return nil, err
 	}
-
 	return f.fetchExecutions(ids), nil
 }
 
@@ -140,35 +131,27 @@ func (f *Executor) consume() {
 }
 
 func (f *Executor) executeTask(context context.Context, jobName string) {
-	f.wg.Add(1)
-	execution := newExecution(jobName, f.node)
-	Logger.Debugf("[%s] begin", execution.ID)
-	f.updateExecution(execution)
-	f.addToRunning(execution)
-	f.updateHistory(execution)
+	execution := f.newExecution(jobName)
+	f.beginExecution(execution)
 
 	var (
 		result interface{}
 		err    error
 	)
 
+	defer func() {
+		execution.finishWith(result, err)
+		f.finishExecution(execution)
+	}()
+
 	f.mu.RLock()
 	job, ok := f.jobs[jobName]
 	f.mu.RUnlock()
-
-	defer func() {
-		execution.finishWith(result, err)
-		f.updateExecution(execution)
-		f.remFromRunning(execution)
-		f.wg.Done()
-		Logger.Debugf("[%s] finish", execution.ID)
-	}()
 
 	if !ok {
 		err = fmt.Errorf("task %s not exist", job)
 		return
 	}
-
 	result, err = job.Run(context)
 }
 
@@ -180,7 +163,7 @@ func (f *Executor) fetchExecutions(ids []string) []Execution {
 		keys[i] = f.executionKey(id)
 	}
 
-	res, err := f.kv.MGet(keys...)
+	res, err := f.cli.MGet(context.Background(), keys...).Result()
 	if err != nil {
 		Logger.Errorf("fetchExecutions failed: %s", err.Error())
 	}
@@ -202,32 +185,64 @@ func (f *Executor) fetchExecutions(ids []string) []Execution {
 	return executions
 }
 
-func (f *Executor) updateExecution(execution *Execution) {
-	ser, _ := json.Marshal(execution)
-	f.kv.SetEx(f.executionKey(execution.ID.String()), ser, 48*time.Hour)
-}
+// Input:
+// KEYS[1] -> execution key
+// KEYS[2] -> running key
+// KEYS[3] -> history key
+// --
+// ARGV[1] -> serialization of execution
+// ARGV[2] -> execution ID
+// ARGV[3] -> max history num - 2
+var beginCmd = redis.NewScript(`
+redis.call("SETEX", KEYS[1], 86400, ARGV[1])
+redis.call("SADD", KEYS[2], ARGV[2])
+redis.call("LTRIM", KEYS[3], 0, ARGV[3] ) 
+redis.call("LPUSH", KEYS[3], ARGV[2])
+`)
 
-func (f *Executor) clearExecution(id string) {
-	f.kv.Del(f.executionKey(id))
-}
-
-func (f *Executor) addToRunning(execution *Execution) {
-	f.running.SAdd(f.runningKey(), execution.ID.String())
-}
-
-func (f *Executor) remFromRunning(execution *Execution) {
-	f.running.SRem(f.runningKey(), execution.ID.String())
-}
-
-func (f *Executor) updateHistory(execution *Execution) {
-	key := f.historyKey(execution.Name)
-	size, _ := f.history.LLen(key)
-	if size >= f.maxHistoryNum {
-		if id, err := f.history.RPop(key); err == nil {
-			f.clearExecution(id)
-		}
+func (f *Executor) beginExecution(e *Execution) {
+	f.wg.Add(1)
+	ser, _ := json.Marshal(e)
+	id := e.ID.String()
+	keys := []string{
+		f.executionKey(id),
+		f.runningKey(),
+		f.historyKey(e.Name),
 	}
-	f.history.LPush(key, execution.ID.String())
+	argv := []interface{}{
+		ser,
+		id,
+		f.maxHistoryNum - 2,
+	}
+	beginCmd.Run(context.Background(), f.cli, keys, argv...)
+	Logger.Debugf("[%s] begin", e.ID)
+}
+
+// Input:
+// KEYS[1] -> execution key
+// KEYS[2] -> running key
+// --
+// ARGV[1] -> serialization of execution
+// ARGV[2] -> execution ID
+var finishCmd = redis.NewScript(`
+redis.call("SETEX", KEYS[1], 86400, ARGV[1])
+redis.call("SREM", KEYS[2], ARGV[2])
+`)
+
+func (f *Executor) finishExecution(e *Execution) {
+	ser, _ := json.Marshal(e)
+	id := e.ID.String()
+	keys := []string{
+		f.executionKey(id),
+		f.runningKey(),
+	}
+	argv := []interface{}{
+		ser,
+		id,
+	}
+	finishCmd.Run(context.Background(), f.cli, keys, argv...)
+	f.wg.Done()
+	Logger.Debugf("[%s] finish", e.ID)
 }
 
 func (f *Executor) historyKey(name string) string {
