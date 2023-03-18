@@ -163,11 +163,11 @@ func (c *Cron) run() {
 				case addType:
 					c.entries.Add(action.Entry)
 					c.entries.Broadcast(action)
-					Logger.Debug("add: ", action.Entry)
+					Logger.Info("add: ", action.Entry)
 				case removeType:
 					c.entries.Remove(action.Entry.Name)
 					c.entries.Broadcast(action)
-					Logger.Debug("remove: ", action.Entry.Name)
+					Logger.Info("remove: ", action.Entry.Name)
 				}
 			case <-c.stop:
 				timer.Stop()

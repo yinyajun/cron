@@ -2,11 +2,11 @@ package cron
 
 import (
 	"encoding/json"
-	"github.com/go-redis/redis/v8"
 	"io/ioutil"
 	"os"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,7 +19,7 @@ func init() {
 	Logger = &logrus.Logger{
 		Out:       os.Stdout,
 		Formatter: formatter,
-		Level:     logrus.TraceLevel,
+		Level:     logrus.InfoLevel,
 	}
 }
 

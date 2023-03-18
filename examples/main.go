@@ -50,8 +50,7 @@ func main() {
 
 type demoJob struct{ a string }
 
-func (j demoJob) Name() string  { return j.a }
-func (j demoJob) Owner() string { return "yinyajun" }
+func (j demoJob) Name() string { return j.a }
 func (j demoJob) Run(ctx context.Context) (interface{}, error) {
 	n := time.Duration(rand.Intn(5) + 3)
 	time.Sleep(n * time.Second)

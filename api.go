@@ -176,7 +176,7 @@ func Router(agent *Agent) http.Handler {
 	r.RegisterHandler("/schedule", newScheduleHandlerFunc(agent))
 	r.RegisterHandler("/history", newHistoryHandlerFunc(agent))
 	r.RegisterHandler("/jobs", newJobsHandlerFunc(agent))
-	r.RegisterHandler("/members", newJobsHandlerFunc(agent))
+	r.RegisterHandler("/members", newMembersHandlerFunc(agent))
 
 	mux.Handle("/", admin.UIHandler())
 

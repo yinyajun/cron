@@ -12,13 +12,11 @@ import (
 	"github.com/yinyajun/cron/store"
 )
 
-const DefaultTimeLayout = "2006-01-02 15:04:05"
-
 type Execution struct {
 	ID         uuid.UUID   `json:"id"`
 	Name       string      `json:"name"`
-	StartedAt  string      `json:"started_at"`
-	FinishedAt string      `json:"finished_at"`
+	StartedAt  int64       `json:"started_at"`
+	FinishedAt int64       `json:"finished_at"`
 	Node       string      `json:"node"`
 	Result     interface{} `json:"result"`
 	Success    bool        `json:"success"`
@@ -28,13 +26,13 @@ func newExecution(name, node string) *Execution {
 	return &Execution{
 		ID:        uuid.New(),
 		Name:      name,
-		StartedAt: time.Now().Format(DefaultTimeLayout),
+		StartedAt: time.Now().Unix() * 1000,
 		Node:      node,
 	}
 }
 
 func (e *Execution) finishWith(result interface{}, err error) {
-	e.FinishedAt = time.Now().Format(DefaultTimeLayout)
+	e.FinishedAt = time.Now().Unix() * 1000
 	if err == nil {
 		e.Result = result
 		e.Success = true
@@ -45,7 +43,6 @@ func (e *Execution) finishWith(result interface{}, err error) {
 
 type Job interface {
 	Name() string
-	Owner() string
 	Run(context.Context) (result interface{}, err error)
 }
 

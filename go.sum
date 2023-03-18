@@ -85,6 +85,8 @@ github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5Cc
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/yinyajun/cron-admin v0.0.0-20230317144816-c6a6ba283eac h1:9irKoVn07ozjRlIgRDsGD5Afrk9M7XKvDG8dTTQ+qIg=
 github.com/yinyajun/cron-admin v0.0.0-20230317144816-c6a6ba283eac/go.mod h1:tnFaBJeDiCZXCm5DSUP/nf1Cl5Vtzvy/JHlDtqhx0gI=
+github.com/yinyajun/cron-admin v0.0.0-20230318050815-092997ce5a85 h1:6OOHTA6EO/3RXlz887eIJarzfAAG4OyBqBOUOWoYlRs=
+github.com/yinyajun/cron-admin v0.0.0-20230318050815-092997ce5a85/go.mod h1:tnFaBJeDiCZXCm5DSUP/nf1Cl5Vtzvy/JHlDtqhx0gI=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190923035154-9ee001bba392/go.mod h1:/lpIB1dKB+9EgE3H3cr1v9wB50oz8l4C4h62xy7jSTY=

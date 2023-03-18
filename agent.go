@@ -18,13 +18,6 @@ var (
 	ErrJobNameEmpty  = errors.New("job node can not be empty")
 )
 
-type EntryRecord struct {
-	Name      string `json:"name"`
-	Spec      string `json:"spec"`
-	Next      string `json:"next"`
-	Displayed bool   `json:"displayed"`
-}
-
 type Agent struct {
 	cron     *Cron
 	executor *Executor
@@ -151,21 +144,22 @@ func (a *Agent) ExecuteOnce(jobName string) error {
 	}
 
 	go a.executor.executeTask(context.Background(), jobName)
+	Logger.Info("execute once:", jobName)
 	return nil
 }
 
-func (a *Agent) Schedule() ([]EntryRecord, error) {
+func (a *Agent) Schedule() ([]entryRecord, error) {
 	events, err := a.cron.Events()
 	if err != nil {
 		return nil, err
 	}
 
-	var results = make([]EntryRecord, len(events))
+	var results = make([]entryRecord, len(events))
 
 	for i, event := range events {
-		results[i] = EntryRecord{
+		results[i] = entryRecord{
 			Name:      event.Name,
-			Next:      event.Time.Format(DefaultTimeLayout),
+			Next:      event.Time.Unix() * 1000,
 			Displayed: event.Displayed,
 		}
 		if e, ok := a.cron.entries.Get(event.Name); ok {
@@ -202,4 +196,11 @@ func (a *Agent) validate(jobName string) error {
 		return ErrJobNotSupport
 	}
 	return nil
+}
+
+type entryRecord struct {
+	Name      string `json:"name"`
+	Spec      string `json:"spec"`
+	Next      int64  `json:"next"`
+	Displayed bool   `json:"displayed"`
 }
