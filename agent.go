@@ -53,7 +53,7 @@ func NewAgent(conf *Conf) *Agent {
 	return &Agent{
 		cron:     cron,
 		executor: executor,
-		server:   http.Server{Addr: conf.Base.HTTPAddr},
+		server:   http.Server{Addr: conf.Base.HttpAddr},
 
 		stop: make(chan os.Signal),
 	}

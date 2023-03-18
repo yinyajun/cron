@@ -23,32 +23,25 @@ func init() {
 	}
 }
 
-type BaseConf struct {
-	HTTPAddr     string        `json:"http_addr"`
-	RedisOptions redis.Options `json:"redis"`
-}
-
-type GossipConf struct {
-	Network  string `json:"network"`
-	NodeName string `json:"node_name"`
-	BindAddr string `json:"bind_addr"`
-	BindPort int    `json:"bind_port"`
-}
-
-type CustomConf struct {
-	// redis key name
-	KeyTimeline string `json:"key_timeline"`
-	KeyEntry    string `json:"key_entry"`
-	KeyExecutor string `json:"key_executor"`
-	// executor
-	MaxHistoryNum   int64 `json:"max_history_num"`
-	MaxOutputLength int   `json:"max_output_length"`
-}
-
 type Conf struct {
-	Base   BaseConf   `json:"base"`
-	Gossip GossipConf `json:"gossip"`
-	Custom CustomConf `json:"custom"`
+	Base struct {
+		HttpAddr     string        `json:"http_addr"`
+		RedisOptions redis.Options `json:"redis"`
+	} `json:"base"`
+
+	Gossip struct {
+		Network  string `json:"network"`
+		NodeName string `json:"node_name"`
+		BindAddr string `json:"bind_addr"`
+		BindPort int    `json:"bind_port"`
+	} `json:"gossip"`
+
+	Custom struct {
+		KeyTimeline   string `json:"key_timeline"`
+		KeyEntry      string `json:"key_entry"`
+		KeyExecutor   string `json:"key_executor"`
+		MaxHistoryNum int64  `json:"max_history_num"`
+	} `json:"custom"`
 }
 
 func ReadConfig(conf *Conf, file string) {
@@ -66,8 +59,8 @@ func ReadConfig(conf *Conf, file string) {
 
 func (c *Conf) WithDefault() {
 	// base
-	if c.Base.HTTPAddr == "" {
-		c.Base.HTTPAddr = ":8080"
+	if c.Base.HttpAddr == "" {
+		c.Base.HttpAddr = ":8080"
 	}
 
 	// gossip
