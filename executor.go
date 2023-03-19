@@ -157,6 +157,9 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 
 func (f *Executor) fetchExecutions(ids []string) []Execution {
 	var executions = make([]Execution, 0, len(ids))
+	if len(ids) == 0 {
+		return executions
+	}
 
 	var keys = make([]string, len(ids))
 	for i, id := range ids {
