@@ -8,5 +8,5 @@ require (
 	github.com/hashicorp/memberlist v0.5.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.9.0
-	github.com/yinyajun/cron-admin v0.0.0-20230318154605-4137c18ab058
+	github.com/yinyajun/cron-admin v0.0.0-20230319075834-b2cc6efda8cb
 )
