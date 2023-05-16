@@ -140,6 +140,9 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 	)
 
 	defer func() {
+		if e := recover(); e != nil {
+			err = fmt.Errorf("[job %s][panic]: %v", jobName, e)
+		}
 		execution.finishWith(result, err)
 		f.finishExecution(execution)
 	}()
@@ -152,7 +155,6 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 		err = fmt.Errorf("task %s not exist", job)
 		return
 	}
-	err = fmt.Errorf("task %s may panic", job)
 	result, err = job.Run(context)
 }
 
@@ -213,7 +215,6 @@ func (f *Executor) beginExecution(e *Execution) {
 		f.runningKey(),
 		f.historyKey(e.Name),
 	}
-	fmt.Println(">>", id)
 	argv := []interface{}{
 		ser,
 		id,
