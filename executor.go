@@ -152,6 +152,7 @@ func (f *Executor) executeTask(context context.Context, jobName string) {
 		err = fmt.Errorf("task %s not exist", job)
 		return
 	}
+	err = fmt.Errorf("task %s may panic", job)
 	result, err = job.Run(context)
 }
 
@@ -212,6 +213,7 @@ func (f *Executor) beginExecution(e *Execution) {
 		f.runningKey(),
 		f.historyKey(e.Name),
 	}
+	fmt.Println(">>", id)
 	argv := []interface{}{
 		ser,
 		id,
